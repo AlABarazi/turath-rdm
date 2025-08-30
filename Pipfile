@@ -10,6 +10,8 @@ check-manifest = ">=0.25"
 invenio-app-rdm = {extras = ["opensearch2"], version = "~=13.0.0"}
 turath-inveniordm = {editable = true, path="./site"}
 uwsgi = ">=2.0"
+invenio-previewer-mirador = {git = "https://github.com/turath-project/invenio-previewer-mirador.git", editable = true, ref = "feature/issue-1-mirador-integration"}
+pypdf2 = "*"
 uwsgitop = ">=0.11"
 uwsgi-tools = ">=1.1.1"
 pycairo = "*"
