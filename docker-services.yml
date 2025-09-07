@@ -19,6 +19,14 @@ services:
       - "INVENIO_SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://turath-inveniordm:turath-inveniordm@db/turath-inveniordm"
       - "INVENIO_WSGI_PROXIES=2"
       - "INVENIO_RATELIMIT_STORAGE_URL=redis://cache:6379/3"
+      # MinIO / S3 settings for containerized app so all other container access them
+      - "AWS_ACCESS_KEY_ID=admin@turath.com"
+      - "AWS_SECRET_ACCESS_KEY=12345678"
+      - "AWS_DEFAULT_REGION=us-east-1"
+      - "AWS_ENDPOINT_URL=http://s3:9000"
+      - "AWS_S3_ADDRESSING_STYLE=path"
+      - "AWS_S3_SIGNATURE_VERSION=s3v4"
+      - "S3_BUCKET_NAME=turath-files"
   frontend:
     build: ./docker/nginx/
     image: turath-inveniordm-frontend
@@ -93,3 +101,20 @@ services:
       # settings only for development. DO NOT use in production!
       - 'OPENSEARCH_HOSTS=["http://search:9200"]'
       - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+  s3:
+    image: minio/minio
+    restart: "unless-stopped"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin@turath.com
+      MINIO_ROOT_PASSWORD: 12345678
+    volumes:
+      - ./data:/data
+    command: server /data --console-address :9001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3

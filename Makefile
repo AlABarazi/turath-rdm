@@ -25,3 +25,14 @@ token:
 token-silent:
 	DYLD_FALLBACK_LIBRARY_PATH=$(DYLD_FALLBACK_LIBRARY_PATH) \
 		invenio shell -c "import runpy; runpy.run_path('scripts/create_api_token.py', run_name='__not_main__')"
+
+# MinIO / Storage helpers
+.PHONY: storage-setup
+storage-setup:
+	DYLD_FALLBACK_LIBRARY_PATH=$(DYLD_FALLBACK_LIBRARY_PATH) \
+		python scripts/storage/minio_setup_workflow.py
+
+.PHONY: storage-verify
+storage-verify:
+	DYLD_FALLBACK_LIBRARY_PATH=$(DYLD_FALLBACK_LIBRARY_PATH) \
+		invenio shell -c "exec(open('scripts/verify_storage.py').read())"

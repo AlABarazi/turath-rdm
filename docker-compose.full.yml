@@ -43,6 +43,10 @@ services:
     extends:
       file: docker-services.yml
       service: pgadmin
+  s3:
+    extends:
+      file: docker-services.yml
+      service: s3
   # Frontend
   frontend:
     extends:
@@ -69,6 +73,14 @@ services:
       - static_data:/opt/invenio/var/instance/static
       - uploaded_data:/opt/invenio/var/instance/data
       - archived_data:/opt/invenio/var/instance/archive
+    environment:
+      - "AWS_ACCESS_KEY_ID=admin@turath.com"
+      - "AWS_SECRET_ACCESS_KEY=12345678"
+      - "AWS_DEFAULT_REGION=us-east-1"
+      - "AWS_ENDPOINT_URL=http://s3:9000"
+      - "AWS_S3_ADDRESSING_STYLE=path"
+      - "AWS_S3_SIGNATURE_VERSION=s3v4"
+      - "S3_BUCKET_NAME=turath-files"
 
   # API Rest Application
   web-api:
@@ -118,3 +130,4 @@ volumes:
   static_data:
   uploaded_data:
   archived_data:
+  data:

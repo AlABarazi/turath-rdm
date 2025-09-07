@@ -15,9 +15,14 @@ pycairo = "*"
 cairocffi = "*"
 cairosvg = "*"
 turath-inveniordm = {file = "site", editable = true}
+python-dotenv = "*"
+fs-s3fs = "*"
+boto3 = "*"
+invenio-accounts = "~=6.0.0"
+invenio-communities = ">=19.0.0,<20.0.0"
 
 [requires]
-python_version = "3.12"
+python_version = "3.9"
 
 [pipenv]
 allow_prereleases = false
