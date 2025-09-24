@@ -47,6 +47,10 @@ services:
     extends:
       file: docker-services.yml
       service: s3
+  cantaloupe:
+    extends:
+      file: docker-services.yml
+      service: cantaloupe
   # Frontend
   frontend:
     extends:
@@ -74,8 +78,8 @@ services:
       - uploaded_data:/opt/invenio/var/instance/data
       - archived_data:/opt/invenio/var/instance/archive
     environment:
-      - "AWS_ACCESS_KEY_ID=admin@turath.com"
-      - "AWS_SECRET_ACCESS_KEY=12345678"
+      - "AWS_ACCESS_KEY_ID=minioadmin"
+      - "AWS_SECRET_ACCESS_KEY=minioadmin"
       - "AWS_DEFAULT_REGION=us-east-1"
       - "AWS_ENDPOINT_URL=http://s3:9000"
       - "AWS_S3_ADDRESSING_STYLE=path"
