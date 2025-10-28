@@ -1,0 +1,132 @@
+# Test docker-compose file using the built test images
+# Usage: docker compose -f docker-compose.test.yml up -d
+
+services:
+  cache:
+    extends:
+      file: docker-services.yml
+      service: cache
+  db:
+    extends:
+      file: docker-services.yml
+      service: db
+  mq:
+    extends:
+      file: docker-services.yml
+      service: mq
+  search:
+    extends:
+      file: docker-services.yml
+      service: search
+  opensearch-dashboards:
+    extends:
+      file: docker-services.yml
+      service: opensearch-dashboards
+  pgadmin:
+    extends:
+      file: docker-services.yml
+      service: pgadmin
+  s3:
+    extends:
+      file: docker-services.yml
+      service: s3
+  cantaloupe:
+    extends:
+      file: docker-services.yml
+      service: cantaloupe
+  
+  # Frontend using TEST image
+  frontend:
+    extends:
+      file: docker-services.yml
+      service: frontend
+    image: turath-rdm-frontend:test  # ← TEST IMAGE
+    volumes:
+      - static_data:/opt/invenio/var/instance/static
+    depends_on:
+      - web-ui
+      - web-api
+    ports:
+      - "80:80"
+      - "443:443"
+  
+  # UI Application using TEST image
+  web-ui:
+    extends:
+      file: docker-services.yml
+      service: app
+    command: ["uwsgi /opt/invenio/var/instance/uwsgi_ui.ini"]
+    image: turath-rdm:test  # ← TEST IMAGE
+    ports:
+      - "5000"
+    volumes:
+      - static_data:/opt/invenio/var/instance/static
+      - uploaded_data:/opt/invenio/var/instance/data
+      - archived_data:/opt/invenio/var/instance/archive
+    environment:
+      - "AWS_ACCESS_KEY_ID=minioadmin"
+      - "AWS_SECRET_ACCESS_KEY=minioadmin"
+      - "AWS_DEFAULT_REGION=us-east-1"
+      - "AWS_ENDPOINT_URL=http://s3:9000"
+      - "AWS_S3_ADDRESSING_STYLE=path"
+      - "AWS_S3_SIGNATURE_VERSION=s3v4"
+      - "S3_BUCKET_NAME=turath-files"
+
+  # API Rest Application using TEST image
+  web-api:
+    extends:
+      file: docker-services.yml
+      service: app
+    command: ["uwsgi /opt/invenio/var/instance/uwsgi_rest.ini"]
+    image: turath-rdm:test  # ← TEST IMAGE
+    ports:
+      - "5000"
+    volumes:
+      - uploaded_data:/opt/invenio/var/instance/data
+      - archived_data:/opt/invenio/var/instance/archive
+    environment:
+      - "AWS_ACCESS_KEY_ID=minioadmin"
+      - "AWS_SECRET_ACCESS_KEY=minioadmin"
+      - "AWS_DEFAULT_REGION=us-east-1"
+      - "AWS_ENDPOINT_URL=http://s3:9000"
+      - "AWS_S3_ADDRESSING_STYLE=path"
+      - "AWS_S3_SIGNATURE_VERSION=s3v4"
+      - "S3_BUCKET_NAME=turath-files"
+
+  # Worker using TEST image
+  worker:
+    extends:
+      file: docker-services.yml
+      service: app
+    command: ["celery -A invenio_app.celery worker --beat --loglevel=INFO"]
+    image: turath-rdm:test  # ← TEST IMAGE
+    volumes:
+      - uploaded_data:/opt/invenio/var/instance/data
+    depends_on:
+      search:
+        condition: service_started
+      cache:
+        condition: service_started
+      db:
+        condition: service_started
+      mq:
+        condition: service_started
+
+  # Jobs scheduler using TEST image
+  scheduler:
+    extends:
+      file: docker-services.yml
+      service: app
+    command: ["celery -A invenio_app.celery beat --scheduler invenio_jobs.services.scheduler:RunScheduler --loglevel=INFO"]
+    image: turath-rdm:test  # ← TEST IMAGE
+    depends_on:
+      mq:
+        condition: service_started
+      db:
+        condition: service_started
+
+volumes:
+  static_data:
+  uploaded_data:
+  archived_data:
+  data:

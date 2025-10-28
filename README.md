@@ -43,6 +43,41 @@ Following is an overview of the generated files and folders:
 | ``.invenio`` | Common file used by Invenio-CLI to be version controlled. |
 | ``.invenio.private`` | Private file used by Invenio-CLI *not* to be version controlled. |
 
+## Additional Services
+
+This repository includes additional services for IIIF support and local development:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| **Cantaloupe** | 8182 | IIIF Image API server for book page images |
+| **MinIO** | 9000, 9001 | S3-compatible object storage (local development) |
+| **OpenSearch Dashboards** | 5601 | Search index exploration UI |
+| **pgAdmin** | 5050 | PostgreSQL database administration |
+
+## CI/CD and Deployment
+
+This repository uses GitHub Actions for continuous integration and deployment. For detailed information:
+
+- **[Architecture Clarification](.github/ARCHITECTURE-CLARIFICATION.md)** - ⭐ **START HERE**: Understanding Local vs Production deployment
+- **[CI/CD Documentation](.github/CICD.md)** - Complete CI/CD workflow documentation
+- **[CI/CD Quick Start](.github/CICD-QUICKSTART.md)** - Quick reference for common operations
+- **[Differences from Upstream](.github/DIFFERENCES-FROM-UPSTREAM.md)** - Local dev vs production architecture
+
+**Key Point**: Local development uses Docker containers for all services (PostgreSQL, OpenSearch, S3/MinIO). Production deployment (via Terraform) uses AWS managed services (RDS, OpenSearch Service, S3). See [Architecture Clarification](.github/ARCHITECTURE-CLARIFICATION.md) for details.
+
+### Quick Start
+
+**Pull latest images:**
+```bash
+docker pull ghcr.io/OWNER/turath-rdm:main
+docker pull ghcr.io/OWNER/turath-rdm-frontend:main
+```
+
+**Trigger a build:**
+```bash
+git push origin main  # Builds and pushes images
+```
+
 ## Documentation
 
 To learn how to configure, customize, deploy and much more, visit
