@@ -39,3 +39,26 @@ services:
     extends:
       file: docker-services.yml
       service: pgadmin
+  s3:
+    extends:
+      file: docker-services.yml
+      service: s3
+  cantaloupe:
+    extends:
+      file: docker-services.yml
+      service: cantaloupe
+    environment:
+      # Use HttpSource and map identifiers via BasicLookupStrategy
+      - CANTALOUPE_SOURCE_STATIC=HttpSource
+      - CANTALOUPE_HTTPSOURCE_LOOKUP_STRATEGY=BasicLookupStrategy
+      - CANTALOUPE_HTTPSOURCE_BASICLOOKUPSTRATEGY_URL_PREFIX=https://host.docker.internal:5000/records/
+      # Trust local HTTPS (self-signed) during development
+      - CANTALOUPE_HTTPSOURCE_ALLOW_INSECURE=true
+      # Enable server-side caches
+      - CANTALOUPE_CACHE_SERVER_SOURCE=FilesystemCache
+      - CANTALOUPE_FILESYSTEMCACHE_PATHNAME=/var/cache/cantaloupe
+      - CANTALOUPE_CACHE_SERVER_DERIVATIVE_ENABLED=true
+      - CANTALOUPE_CACHE_SERVER_DERIVATIVE=HeapCache
+      - CANTALOUPE_HEAPCACHE_PERSIST=false
+volumes:
+  data:

@@ -5,6 +5,16 @@ cd "$(dirname "$0")/.." || exit 1
 # Activate venv explicitly to avoid Homebrew/system Python
 source .venv/bin/activate
 
+# Ensure macOS dynamic linker can find Homebrew-installed cairo
+export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:${DYLD_FALLBACK_LIBRARY_PATH}"
+
+# Optional quick verification in this exact shell/context
+python - <<'PY'
+import sys, ctypes.util
+print(f"python: {sys.executable}")
+print("cairo find_library:", ctypes.util.find_library("cairo"))
+PY
+
 # Make the script exit on any error
 # set -e # Temporarily disable exit on error to handle existing user/role
 

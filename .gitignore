@@ -2,8 +2,10 @@
 __pycache__/
 *.py[cod]
 
+
 # C extensions
 *.so
+
 
 # Distribution / packaging
 .Python
@@ -23,15 +25,18 @@ var/
 .installed.cfg
 *.egg
 
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
 
 # Unit test / coverage reports
 htmlcov/
@@ -43,39 +48,51 @@ nosetests.xml
 coverage.xml
 *,cover
 
+
 # Translations
 *.mo
 *.pot
 
+
 # Django stuff:
 *.log
+
 
 # Sphinx documentation
 docs/_build/
 
+
 # PyBuilder
 target/
 
+
 test.db
+
 
 # Environments
 .venv/
 
+
 # Logs
 logs/
 
+
 # Invenio-cli per machine file
 .invenio.private
+
 
 # S3 default bucket location
 data/default/*
 data/.minio.sys
 
+
 # Celery
 celerybeat-schedule
 
+
 # macOS
 .DS_Store
+
 
 # Editors / IDEs
 .vscode/
@@ -83,6 +100,7 @@ celerybeat-schedule
 *.swp
 *.swo
 *~
+
 
 # Python tooling caches
 .pytest_cache/
@@ -92,10 +110,12 @@ celerybeat-schedule
 pip-wheel-metadata/
 .python-version
 
+
 # Environment files
 .env
 .env.*
 !.env.example
+
 
 # Node / JS
 node_modules/
@@ -104,10 +124,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-store/
 
+
 # Docker / Compose overrides
 docker-compose.override.yml
 .env.docker
 .env.local
+
 
 # Runtime artifacts
 instance/

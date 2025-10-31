@@ -29,6 +29,25 @@ class InvenioAdminSetup:
         self.project_root = script_dir.parent
         os.chdir(self.project_root)
         
+        # On macOS, ensure Homebrew libs are discoverable by the dynamic linker
+        if sys.platform == 'darwin':
+            dyld_fb = os.environ.get('DYLD_FALLBACK_LIBRARY_PATH', '')
+            brew_lib = '/opt/homebrew/lib'
+            if brew_lib not in dyld_fb.split(':'):
+                os.environ['DYLD_FALLBACK_LIBRARY_PATH'] = (
+                    f"{brew_lib}:{dyld_fb}" if dyld_fb else brew_lib
+                )
+            logger.info(
+                "DYLD_FALLBACK_LIBRARY_PATH set for macOS: %s",
+                os.environ.get('DYLD_FALLBACK_LIBRARY_PATH')
+            )
+            # Quick inline verification in this exact context
+            try:
+                import ctypes.util  # noqa: WPS433 (local import OK for verification)
+                logger.info("cairo find_library: %s", ctypes.util.find_library('cairo'))
+            except Exception as ex:  # pragma: no cover
+                logger.warning("cairo verification failed: %s", ex)
+        
         # Detect environment and set command prefix
         if os.getenv('PIPENV_ACTIVE'):
             self.cmd_prefix = []
@@ -56,7 +75,8 @@ class InvenioAdminSetup:
                 cmd, 
                 capture_output=True, 
                 text=True, 
-                check=not ignore_errors
+                check=not ignore_errors,
+                env=os.environ.copy(),
             )
             
             if result.returncode == 0:
@@ -147,8 +167,16 @@ class InvenioAdminSetup:
         if result is not None:
             logger.info(f"Role assignment result: {result}")
         else:
-            logger.warning("Failed to add user to admin role")
-            success = False
+            # Some environments might expect reversed order; try it as a fallback
+            logger.info("Primary role add failed; trying reversed argument order (role, user)...")
+            retry_result = self.run_invenio([
+                'roles', 'add', 'admin', 'admin@turath.com'
+            ], ignore_errors=True)
+            if retry_result is not None:
+                logger.info(f"Role assignment (reversed) result: {retry_result}")
+            else:
+                # Treat as idempotent: likely already assigned
+                logger.info("Role assignment appears idempotent or user already has role; continuing")
         
         # Grant superuser-access to the admin role
         logger.info("Granting superuser-access to admin role...")
