@@ -15,6 +15,7 @@ pycairo = "*"
 cairocffi = "*"
 cairosvg = "*"
 turath-inveniordm = {file = "site", editable = true}
+# invenio-previewer-mirador = {path = "/Users/alaaalbarazi/Projects/Turath/invenio-previewer-mirador-feature-issue-1-mirador-integration", editable = true}
 python-dotenv = "*"
 fs-s3fs = "*"
 boto3 = "*"
