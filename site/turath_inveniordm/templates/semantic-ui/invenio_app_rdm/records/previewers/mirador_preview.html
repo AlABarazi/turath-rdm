@@ -1,0 +1,47 @@
+{% extends config.PREVIEWER_ABSTRACT_TEMPLATE %}
+
+{# Mirador preview template - renders a container and optionally initializes Mirador if assets are present #}
+
+{% block panel %}
+<div class="ui segment" id="mirador-container">
+  <div
+    id="mirador-viewer"
+    data-manifest-url="{{ manifest_url }}"
+    data-mirador-config='{{ mirador_config | tojson }}'
+    style="min-height: 520px;"
+  ></div>
+  <noscript>Mirador requires JavaScript to be enabled.</noscript>
+</div>
+{% endblock %}
+
+{% block javascript %}
+{{ super() }}
+<script>
+  (function() {
+    try {
+      var container = document.getElementById('mirador-viewer');
+      if (!container) return;
+
+      var manifestUrl = container.getAttribute('data-manifest-url');
+      var configAttr = container.getAttribute('data-mirador-config');
+      var cfg = {};
+      try { cfg = JSON.parse(configAttr || '{}'); } catch(e) { cfg = {}; }
+
+      if (manifestUrl && cfg && cfg.windows && cfg.windows.length > 0) {
+        cfg.windows[0].manifestId = manifestUrl;
+      } else if (manifestUrl) {
+        cfg = Object.assign({ id: 'mirador-viewer', windows: [{ manifestId: manifestUrl }] }, cfg || {});
+      }
+
+      if (window.Mirador && typeof Mirador.viewer === 'function') {
+        Mirador.viewer(cfg);
+      } else {
+        // Assets not loaded yet; will be added in T5
+        console.debug('Mirador not available yet; template rendered without initialization.');
+      }
+    } catch (err) {
+      console.error('Mirador template init error:', err);
+    }
+  })();
+</script>
+{% endblock %}
