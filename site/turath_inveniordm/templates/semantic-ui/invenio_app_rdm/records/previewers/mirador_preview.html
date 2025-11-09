@@ -14,8 +14,14 @@
 </div>
 {% endblock %}
 
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="https://unpkg.com/mirador@3.3.0/dist/mirador.min.css" />
+{% endblock %}
+
 {% block javascript %}
 {{ super() }}
+<script src="https://unpkg.com/mirador@3.3.0/dist/mirador.min.js"></script>
 <script>
   (function() {
     try {
