@@ -14,13 +14,12 @@ uwsgi-tools = ">=1.1.1"
 pycairo = "*"
 cairocffi = "*"
 cairosvg = "*"
-turath-inveniordm = {file = "site", editable = true}
-# invenio-previewer-mirador = {path = "/Users/alaaalbarazi/Projects/Turath/invenio-previewer-mirador-feature-issue-1-mirador-integration", editable = true}
 python-dotenv = "*"
 fs-s3fs = "*"
 boto3 = "*"
 invenio-accounts = "~=6.0.0"
 invenio-communities = ">=19.0.0,<20.0.0"
+turath-inveniordm = {file = "site", editable = true}
 
 [requires]
 python_version = "3.9"

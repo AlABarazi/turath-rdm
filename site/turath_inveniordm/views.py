@@ -13,6 +13,7 @@ def create_blueprint(app):
         "turath_inveniordm",
         __name__,
         template_folder="./templates",
+        static_folder="./static",
     )
 
     # Add URL rules

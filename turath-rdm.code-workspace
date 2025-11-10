@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../invenio-previewer-mirador-feature-issue-1-mirador-integration"
+		},
+		{
+			"path": "../zenodo-rdm-21.2.1"
 		}
 	],
 	"settings": {}

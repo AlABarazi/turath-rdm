@@ -24,6 +24,13 @@ def init_app(app):
             "workspaceControlPanel": {"enabled": False},
         },
     )
+    # Ensure Mirador previewer has highest priority
+    try:
+        pref = list(app.config.get("PREVIEWER_PREFERENCE") or [])
+        pref = [p for p in pref if p != "mirador_previewer"]
+        app.config["PREVIEWER_PREFERENCE"] = ["mirador_previewer"] + pref
+    except Exception:
+        pass
     # Apply IIIF Search services patch
     init_iiif_search_patch(app)
     
