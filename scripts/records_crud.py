@@ -273,25 +273,15 @@ def cmd_ingest_book(args):
             raise FileNotFoundError(f"No PDF found in {book_dir}")
         pdf = cands[0]
 
-    # HOCR (optional, pick first or 001.hocr). Support 'hocr/' subfolder.
-    hocr = None
+    # HOCR (optional): gather ALL *.hocr files from root and optional 'hocr/' subfolder
+    hocr_files = []
     if args.include_hocr:
-        # Preferred exact filename at root
-        pref = book_dir / "001.hocr"
-        # Alternate preferred path inside 'hocr/' subdir
-        pref_sub = book_dir / "hocr" / "001.hocr"
-        if pref.exists():
-            hocr = pref
-        elif pref_sub.exists():
-            hocr = pref_sub
-        else:
-            # Gather candidates from root and 'hocr/'
-            cands = []
-            cands.extend(sorted(book_dir.glob("*.hocr")))
-            hocr_dir = book_dir / "hocr"
-            if hocr_dir.exists():
-                cands.extend(sorted(hocr_dir.glob("*.hocr")))
-            hocr = cands[0] if cands else None
+        # Collect from root
+        hocr_files.extend(sorted(book_dir.glob("*.hocr")))
+        # Collect from 'hocr' subdirectory if present
+        hocr_dir = book_dir / "hocr"
+        if hocr_dir.exists():
+            hocr_files.extend(sorted(hocr_dir.glob("*.hocr")))
 
     # Create draft
     draft = create_draft(
@@ -303,14 +293,14 @@ def cmd_ingest_book(args):
     record_id = draft.get("id")
     print({"record_id": record_id})
 
-    # Init files
-    keys = [pdf.name] + ([hocr.name] if hocr else [])
+    # Init files (PDF + all HOCRs if requested)
+    keys = [pdf.name] + [p.name for p in hocr_files]
     init_files(args.base_url, token, record_id, keys)
 
     # Upload + commit
     upload_and_commit(args.base_url, token, record_id, pdf.name, pdf)
-    if hocr:
-        upload_and_commit(args.base_url, token, record_id, hocr.name, hocr)
+    for hocr_path in hocr_files:
+        upload_and_commit(args.base_url, token, record_id, hocr_path.name, hocr_path)
 
     # Publish
     published = publish(args.base_url, token, record_id)

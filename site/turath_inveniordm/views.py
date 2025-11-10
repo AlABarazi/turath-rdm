@@ -2,7 +2,9 @@
 
 from flask import Blueprint, Response, request
 import requests
-from urllib.parse import quote
+import json
+import re
+from urllib.parse import quote, unquote
 
 #
 # Registration
@@ -26,42 +28,75 @@ def create_blueprint(app):
         to   http://127.0.0.1:8182/iiif/<path>?<query>
         """
         target_base = "http://127.0.0.1:8182/iiif"
-        # Reconstruct the upstream URL while preserving the IIIF identifier semantics.
-        # We extract the decoded path, isolate the identifier segment, re-encode it,
-        # and then append the remaining operation segments and original query string.
-        decoded_path = request.path  # e.g., /iiif/2/https://host/.../files/x.pdf/full/1200,/0/default.jpg
-        if "/iiif/" not in decoded_path:
-            return Response("Bad IIIF request", status=400)
-        after_prefix = decoded_path.split("/iiif/", 1)[1]  # e.g., 2/https://host/.../files/x.pdf/full/...
-        if "/" not in after_prefix:
+        # Parse version and remaining path from route parameter (decoded by Werkzeug)
+        # Example: path = "2/https://host.../files/x.pdf/full/256,/0/default.jpg"
+        if "/" not in path:
             return Response("Bad IIIF path", status=400)
-        version, rest = after_prefix.split("/", 1)
-        # Determine whether this is an info.json or image request
-        if rest.endswith("/info.json"):
-            # identifier is everything before the trailing /info.json
-            id_part = rest[: -len("/info.json")]
-            op_part = "/info.json"
-        else:
-            # assume image request and find the operation pivot (e.g., /full/)
-            pivot = "/full/"
-            pivot_pos = rest.find(pivot)
-            if pivot_pos == -1:
-                # Fallback: try to split at the last slash before parameters
-                last_slash = rest.rfind("/")
-                if last_slash <= 0:
-                    return Response("Unsupported IIIF path", status=400)
-                id_part = rest[:last_slash]
-                op_part = rest[last_slash:]
+        version, rest = path.split("/", 1)
+
+        # Extract identifier and operation part robustly.
+        # The identifier is a URL (http/https) and may contain many '/'.
+        # We detect operation by known prefixes: '/info.json' or '/full/'.
+        id_raw = rest
+        op_part = ""
+        if "/info.json" in rest:
+            idx = rest.rfind("/info.json")
+            before = rest[:idx]
+            # Determine if a page prefix exists just before info.json (e.g., /p2/info.json)
+            pseg = before.rsplit("/", 1)[-1] if "/" in before else before
+            if pseg.startswith("p") and pseg[1:].isdigit():
+                id_raw = before.rsplit("/", 1)[0] if "/" in before else ""
+                op_part = f"{pseg}/info.json"
             else:
-                id_part = rest[:pivot_pos]
-                op_part = rest[pivot_pos:]
-        # Re-encode identifier so that slashes are percent-encoded as required by IIIF
-        encoded_id = quote(id_part, safe="")
-        # Reconstruct upstream URL
-        target_url = f"{target_base}/{version}/{encoded_id}{op_part}"
-        # Append original query string if any
-        if request.query_string:
-            target_url = f"{target_url}?{request.query_string.decode('utf-8')}"
+                id_raw = before
+                op_part = "info.json"
+        elif "/full/" in rest:
+            idx = rest.find("/full/")
+            before = rest[:idx]
+            after = rest[idx + 1 :]  # 'full/...' without leading '/'
+            pseg = before.rsplit("/", 1)[-1] if "/" in before else before
+            if pseg.startswith("p") and pseg[1:].isdigit():
+                id_raw = before.rsplit("/", 1)[0] if "/" in before else ""
+                op_part = f"{pseg}/{after}"
+            else:
+                id_raw = before
+                op_part = after
+        elif re.search(r"/p(\d+)/", rest):
+            # Page-qualified region/size requests, e.g., .../<id>/p2/0,0,948,1380/...
+            m = re.search(r"/p(\d+)/", rest)
+            idx = m.start()
+            id_raw = rest[:idx]
+            # op_part should start with 'pN/...'
+            op_part = rest[idx + 1 :]
+        else:
+            # Fallback: split once (may fail for complex identifiers but keeps compatibility)
+            if "/" in rest:
+                id_raw, op_part = rest.split("/", 1)
+            else:
+                id_raw, op_part = rest, ""
+
+        # Percent-encode identifier for upstream Cantaloupe
+        encoded_id = quote(unquote(id_raw), safe="")
+
+        # Support page-qualified routes like .../{encoded_id}/p{N}/... by mapping to upstream ?page=N
+        page_param = None
+        if op_part.startswith("p") and "/" in op_part:
+            pseg, remainder = op_part.split("/", 1)
+            if pseg[1:].isdigit():
+                page_param = int(pseg[1:])
+                op_part = remainder  # strip the p{N}/ prefix
+
+        # Build upstream URL path (preserve op_part exactly)
+        upstream_path = f"{version}/{encoded_id}"
+        if op_part:
+            upstream_path = f"{upstream_path}/{op_part}"
+        target_url = f"{target_base}/{upstream_path}"
+        # Append query string and/or page parameter
+        qs = request.query_string.decode("utf-8") if request.query_string else ""
+        if page_param is not None:
+            qs = (qs + ("&" if qs else "") + f"page={page_param}")
+        if qs:
+            target_url = f"{target_url}?{qs}"
 
         # Forward selected headers
         fwd_headers = {}
@@ -81,12 +116,35 @@ def create_blueprint(app):
         except requests.RequestException:
             return Response("Upstream IIIF server unavailable", status=502)
 
+        excluded = {"transfer-encoding", "content-encoding", "connection"}
+
+        # info.json rewrite to same-origin @id (preserve page-qualified '@id' when pN used)
+        if op_part.endswith("info.json"):
+            try:
+                data = upstream.json()
+            except ValueError:
+                try:
+                    data = json.loads(upstream.content.decode("utf-8", "ignore"))
+                except Exception:
+                    data = {}
+            base_id = f"{request.host_url.rstrip('/')}/iiif/{version}/{encoded_id}"
+            if page_param is not None:
+                base_id = f"{base_id}/p{page_param}"
+            if isinstance(data, dict):
+                data["@id"] = base_id
+            body = json.dumps(data)
+            resp_headers = [
+                (k, v) for k, v in upstream.headers.items() if k.lower() not in excluded
+            ]
+            resp_headers = [(k, v) for k, v in resp_headers if k.lower() != "content-type"]
+            resp_headers.append(("Content-Type", "application/json"))
+            return Response(body, status=upstream.status_code, headers=resp_headers)
+
         def generate():
             for chunk in upstream.iter_content(chunk_size=8192):
                 if chunk:
                     yield chunk
 
-        excluded = {"transfer-encoding", "content-encoding", "connection"}
         resp_headers = [
             (k, v) for k, v in upstream.headers.items() if k.lower() not in excluded
         ]
