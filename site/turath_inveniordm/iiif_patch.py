@@ -141,20 +141,27 @@ def patch_iiif_manifest_schema():
         enc_id = quote(full_url, safe='')
 
         # Helper to fetch per-page dimensions from Cantaloupe info.json
+        # OPTIMIZATION: Disabled for now - fetching dims for 464 pages takes too long!
+        # TODO: Cache dimensions or fetch asynchronously
         def get_dims(page: int):
-            try:
-                info_url = f"http://127.0.0.1:8182/iiif/2/{enc_id}/info.json?page={page}"
-                ir = requests.get(info_url, timeout=10)
-                if ir.ok:
-                    j = ir.json()
-                    w = int(j.get('width') or 0)
-                    h = int(j.get('height') or 0)
-                    if w > 0 and h > 0:
-                        return w, h
-            except Exception:
-                pass
-            # Sensible fallback
-            return 1024, 1024
+            # Skip Cantaloupe calls - use sensible defaults
+            # A4 page at 150 DPI: ~1240 x 1754
+            return 1240, 1754
+            
+            # Original code (disabled):
+            # try:
+            #     info_url = f"http://127.0.0.1:8182/iiif/2/{enc_id}/info.json?page={page}"
+            #     ir = requests.get(info_url, timeout=10)
+            #     if ir.ok:
+            #         j = ir.json()
+            #         w = int(j.get('width') or 0)
+            #         h = int(j.get('height') or 0)
+            #         if w > 0 and h > 0:
+            #             return w, h
+            # except Exception:
+            #     pass
+            # # Sensible fallback
+            # return 1024, 1024
 
         # Construct sequence and canvases
         seq_id = f"{app_base}/records/{record_pid}/sequence/normal"
