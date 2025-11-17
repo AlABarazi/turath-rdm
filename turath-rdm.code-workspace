@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../zenodo-rdm-21.2.1"
+		},
+		{
+			"path": "../chronicals"
 		}
 	],
 	"settings": {}

@@ -88,20 +88,147 @@ def api_put_bytes(url: str, token: str, data: bytes, content_type: str = "applic
     return requests.put(url, headers=headers, data=data, verify=False)
 
 
+# ---------- dummy custom fields for local experimentation ----------
+
+
+def build_dummy_custom_fields(book_id: str) -> Dict[str, object]:
+    """Build a dummy custom_fields payload for turath:* fields.
+
+    This is intended for local testing of the upload pipeline with the
+    Turath custom fields. It uses simple, obviously fake values and
+    only relies on vocabulary IDs that are expected to exist in a
+    standard InvenioRDM setup (e.g., languages, licenses, resource
+    types). For project-specific vocabularies like creators or places,
+    we keep the payload minimal to avoid hard dependency on local
+    fixture content.
+    """
+
+    return {
+        # 1. Title
+        "turath:title": f"Dummy title for {book_id}",
+        # 2. Alternative titles (multi-value)
+        "turath:alternative_title": [
+            f"Alternative transliterated title for {book_id}",
+            "عنوان بديل تجريبي ١",
+        ],
+        # 3. Publisher (multi-value keyword)
+        "turath:publisher": [
+            "Dummy Publisher A",
+            "Dummy Publisher B",
+        ],
+        # 6-7. Date and Date-Issued
+        "turath:date": "2024-01-15",
+        "turath:date_issued": "2024-02-01",
+        # 9. Description (multi-value)
+        "turath:description": [
+            "Short English description for testing custom fields.",
+            "وصف عربي تجريبي لحقل الوصف.",
+        ],
+        # 10. Type (resource_type) – align with core metadata where possible
+        "turath:resource_type": {
+            "id": "publication-book",
+        },
+        # 11. Format (multi-value vocab) – keep generic example IDs, safe to adjust
+        # in real data by looking up /api/vocabularies/formats.
+        # Here we only show structure; IDs may need to be updated in practice.
+        # "turath:format": [
+        #     {"id": "text"},
+        #     {"id": "application-pdf"},
+        # ],
+        # 11. Extent
+        "turath:format_extent": "300 pages; 25 cm",
+        # 12. Identifier (multi-value)
+        "turath:identifier": [
+            f"{book_id}.pdf",
+            f"https://example.org/books/{book_id}",
+        ],
+        # 13. Source (multi-value)
+        "turath:source": [
+            "Example Collection, Box 1, Folder 2",
+            "Donated by Example Family, 2020",
+        ],
+        # 14. Language (multi-value vocab) – use standard ISO 639-2 codes
+        "turath:language": [
+            {"id": "ara"},
+            {"id": "eng"},
+        ],
+        # 15. Coverage-Temporal
+        "turath:coverage_temporal_start": "1900-01-01",
+        "turath:coverage_temporal_end": "1950-12-31",
+        # 17. Relation
+        "turath:relation_identifier": f"REL-{book_id}",
+        "turath:bibliographic_citation": [
+            "Dummy Author. Dummy Title. Dummy Place: Dummy Publisher, 2024.",
+            "مؤلف تجريبي. عنوان تجريبي. مكان تجريبي: ناشر تجريبي، ٢٠٢٤.",
+        ],
+        # 18. Rights – use an existing license ID from vocabularies/licenses
+        "turath:rights": {
+            "id": "cc-by-4.0",
+        },
+        "turath:rights_uri": "https://creativecommons.org/licenses/by/4.0/",
+        "turath:rights_identifier": "CC-BY-4.0",
+    }
+
+
+def load_custom_fields_from_metadata(book_dir: Path) -> Optional[Dict[str, object]]:
+    """
+    Load custom_fields from metadata.json in book directory.
+    
+    Returns None if metadata.json doesn't exist or can't be loaded.
+    """
+    import json
+    
+    metadata_file = book_dir / "metadata.json"
+    if not metadata_file.exists():
+        return None
+    
+    try:
+        with open(metadata_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        custom_fields = data.get("custom_fields", {})
+        if not custom_fields:
+            print(f"⚠️  Warning: metadata.json exists but has no custom_fields", file=sys.stderr)
+            return None
+        
+        print(f"✓ Loaded {len(custom_fields)} custom fields from metadata.json")
+        return custom_fields
+    
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to load metadata.json: {e}", file=sys.stderr)
+        return None
+
+
 # ---------- CRUD minimal ----------
 
-def create_draft(base_url: str, token: str, title: str, resource_type_id: str = "publication-book") -> dict:
+def create_draft(
+    base_url: str,
+    token: str,
+    title: str,
+    resource_type_id: str = "publication-book",
+    custom_fields: Optional[Dict[str, object]] = None,
+) -> dict:
     url = f"{base_url}/api/records"
     payload = {
         "metadata": {
             "title": title,
             "resource_type": {"id": resource_type_id},
-            "creators": [{"person_or_org": {"type": "personal", "family_name": "Uploader", "given_name": "Turath"}}],
+            "creators": [
+                {
+                    "person_or_org": {
+                        "type": "personal",
+                        "family_name": "Uploader",
+                        "given_name": "Turath",
+                    }
+                }
+            ],
             "publication_date": "2025-01-01",
         },
         "access": {"record": "public", "files": "public"},
         "files": {"enabled": True},
     }
+    if custom_fields:
+        payload["custom_fields"] = custom_fields
     r = api_post(url, token, payload)
     if not r.ok:
         raise RuntimeError(f"Create draft failed: {r.status_code} {r.text}")
@@ -283,12 +410,29 @@ def cmd_ingest_book(args):
         if hocr_dir.exists():
             hocr_files.extend(sorted(hocr_dir.glob("*.hocr")))
 
-    # Create draft
+    # Try to load custom fields from metadata.json, fallback to dummy
+    print(f"\n{'='*60}")
+    print(f"Loading metadata for: {args.book_id}")
+    print(f"{'='*60}")
+    
+    custom_fields = load_custom_fields_from_metadata(book_dir)
+    
+    if custom_fields:
+        print(f"✓ Using custom fields from metadata.json")
+        # Extract title from custom fields if available
+        title = custom_fields.get("turath:title", args.book_id)
+    else:
+        print(f"⚠️  No metadata.json found, using dummy custom fields")
+        custom_fields = build_dummy_custom_fields(args.book_id)
+        title = args.book_id
+    
+    print(f"\nCreating draft record...")
     draft = create_draft(
         args.base_url,
         token,
-        title=args.book_id,
+        title=title,
         resource_type_id=getattr(args, "resource_type", "publication-book"),
+        custom_fields=custom_fields,
     )
     record_id = draft.get("id")
     print({"record_id": record_id})
