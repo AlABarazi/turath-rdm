@@ -85,6 +85,9 @@ logs/
 data/default/*
 data/.minio.sys
 
+# InvenioRDM file storage
+data/turath-files/
+
 
 # Celery
 celerybeat-schedule

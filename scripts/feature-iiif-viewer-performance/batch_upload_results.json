@@ -1,0 +1,21 @@
+{
+  "timestamp": "2025-11-19T20:21:34.472091",
+  "total_duration_seconds": 139.39684,
+  "total_books": 1,
+  "successful": 1,
+  "failed": 0,
+  "results": [
+    {
+      "success": true,
+      "record_id": "x5sch-1ke63",
+      "error": null,
+      "prewarm_result": {
+        "pages_warmed": 5,
+        "duration": 22.7586989402771,
+        "errors": []
+      },
+      "book_id": "019_نهضة_الأعيان_بحرية_عمان",
+      "duration": 139.396795
+    }
+  ]
+}
