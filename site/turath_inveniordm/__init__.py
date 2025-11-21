@@ -36,3 +36,10 @@ def init_app(app):
     
     # Register test signal handlers for T1 research
     register_test_handlers(app)
+    
+    # Register HOCR sync signal handlers
+    try:
+        from . import signals as hocr_signals
+        app.logger.info("✅ HOCR sync signal handlers registered")
+    except Exception as e:
+        app.logger.error(f"Failed to register HOCR signals: {e}")

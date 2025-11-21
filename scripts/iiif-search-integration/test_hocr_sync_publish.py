@@ -76,8 +76,7 @@ def test_hocr_sync_on_publish(record_pid=None):
             record = current_rdm_records_service.publish(system_identity, draft.id)
             test_pid = record.id
         
-        print(f"   ✅ Record published: {test_pid}")
-        
+        print(f"   ✅ Record published: {test_pid}")        
         # Check filesystem
         print("\n3. Checking filesystem...")
         hocr_dir = os.path.join(hocr_mount_base, test_pid, 'hocr')
@@ -131,7 +130,22 @@ def test_with_hocr_record():
 
 
 if __name__ == "__main__":
+    # FORCE S3 CONFIGURATION VIA ENV VARS (Before create_app)
+    # Invenio-S3 configuration keys
+    os.environ['INVENIO_S3_ENDPOINT_URL'] = 'http://127.0.0.1:9000'
+    os.environ['INVENIO_S3_ACCESS_KEY_ID'] = 'minioadmin'
+    os.environ['INVENIO_S3_SECRET_ACCESS_KEY'] = 'minioadmin'
+    os.environ['INVENIO_S3_url_style'] = 'path'  # Lowercase might be key for some versions
+    os.environ['INVENIO_S3_URL_STYLE'] = 'path'
+    
+    # Standard AWS keys (just in case)
+    os.environ['AWS_ENDPOINT_URL'] = 'http://127.0.0.1:9000'
+    os.environ['AWS_ACCESS_KEY_ID'] = 'minioadmin'
+    os.environ['AWS_SECRET_ACCESS_KEY'] = 'minioadmin'
+    os.environ['AWS_S3_ADDRESSING_STYLE'] = 'path'
+    
     app = create_app()
+    
     with app.app_context():
         if len(sys.argv) > 1:
             # Test with existing record
