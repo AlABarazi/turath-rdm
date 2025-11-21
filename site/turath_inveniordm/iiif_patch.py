@@ -204,7 +204,7 @@ def patch_iiif_manifest_schema():
                 ],
                 "otherContent": [
                     {
-                        "@id": f"{app_base}/records/{record_pid}/annotations/p{pstr}",
+                        "@id": f"{base_url}/annotations/{record_pid}/p{pstr}",
                         "@type": "sc:AnnotationList",
                         "label": f"Text of page {pstr}",
                     }
