@@ -81,6 +81,98 @@ def parse_hocr_file(file_path, page_index, query):
         
     return matches
 
+def parse_hocr_words(file_path):
+    """Extract all words with bounding boxes from HOCR file."""
+    words_data = []
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            soup = BeautifulSoup(f, 'lxml')
+            
+        # Find all words
+        words = soup.find_all('span', class_='ocrx_word')
+        
+        for word in words:
+            text = word.get_text().strip()
+            if not text:
+                continue
+                
+            # Get bounding box
+            title = word.get('title', '')
+            bbox = None
+            if 'bbox' in title:
+                parts = title.split(';')
+                for part in parts:
+                    if 'bbox' in part:
+                        coords = part.replace('bbox', '').strip().split()
+                        if len(coords) == 4:
+                            x1, y1, x2, y2 = map(int, coords)
+                            w = x2 - x1
+                            h = y2 - y1
+                            bbox = f"{x1},{y1},{w},{h}"
+                            break
+            
+            if bbox:
+                words_data.append({
+                    'text': text,
+                    'bbox': bbox
+                })
+    except Exception as e:
+        logger.error(f"Error parsing words from {file_path}: {e}")
+        
+    return words_data
+
+@app.route('/annotations/<record_pid>/<page_id>', methods=['GET'])
+def annotations(record_pid, page_id):
+    """IIIF Annotation List API endpoint (for text overlay)."""
+    # page_id format expected: p001, p002, etc.
+    try:
+        # Extract page number from pXXX
+        page_num_str = page_id.replace('p', '')
+        # Filename format: 001.hocr
+        filename = f"{page_num_str}.hocr"
+    except:
+        abort(400, "Invalid page_id format. Expected pXXX (e.g., p001)")
+
+    file_path = os.path.join(HOCR_BASE_DIR, record_pid, 'hocr', filename)
+    logger.info(f"Looking for annotation file: {file_path}")
+    
+    if not os.path.exists(file_path):
+        # Try finding file without zero padding if strict match failed
+        logger.warning(f"File not found at {file_path}. Checking directory content...")
+        try:
+            dir_path = os.path.join(HOCR_BASE_DIR, record_pid, 'hocr')
+            if os.path.exists(dir_path):
+                logger.info(f"Directory content: {os.listdir(dir_path)}")
+        except:
+            pass
+        abort(404, f"Page HOCR file not found: {filename}")
+
+    words = parse_hocr_words(file_path)
+    
+    resources = []
+    canvas_id = f"{IIIF_SERVER_BASE_URL}/records/{record_pid}/canvas/{page_id}"
+    
+    for i, word in enumerate(words):
+        annotation_id = f"{SEARCH_SERVICE_BASE_URL}/annotations/{record_pid}/{page_id}/{i}"
+        resources.append({
+            "@id": annotation_id,
+            "@type": "oa:Annotation",
+            "motivation": "sc:painting",
+            "resource": {
+                "@type": "cnt:ContentAsText",
+                "chars": word['text'],
+                "format": "text/plain"
+            },
+            "on": f"{canvas_id}#xywh={word['bbox']}"
+        })
+
+    return jsonify({
+        "@context": "http://iiif.io/api/presentation/2/context.json",
+        "@id": f"{SEARCH_SERVICE_BASE_URL}/annotations/{record_pid}/{page_id}",
+        "@type": "sc:AnnotationList",
+        "resources": resources
+    })
+
 @app.route('/search/<record_pid>', methods=['GET'])
 def search(record_pid):
     """IIIF Search API v1 endpoint."""
