@@ -468,6 +468,9 @@ def cmd_ingest_book(args):
 
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
+    
+    # Return record_id for use by calling scripts
+    return record_id
 
 
 def cmd_get(args):

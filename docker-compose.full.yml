@@ -51,6 +51,21 @@ services:
     extends:
       file: docker-services.yml
       service: cantaloupe
+  # IIIF Search & Annotation Service
+  search-service:
+    build: ./services/search_service
+    image: turath-search-service
+    restart: "unless-stopped"
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./hocr_mount/books:/hocr_mount/books
+    environment:
+      - HOCR_BASE_DIR=/hocr_mount/books
+      - SEARCH_SERVICE_BASE_URL=https://127.0.0.1:5001
+      - IIIF_SERVER_BASE_URL=https://127.0.0.1:5000
+      - FLASK_ENV=production
+
   # Frontend
   frontend:
     extends:
@@ -58,12 +73,18 @@ services:
       service: frontend
     volumes:
       - static_data:/opt/invenio/var/instance/static
+      - uploaded_data:/opt/invenio/var/instance/data
+      - archived_data:/opt/invenio/var/instance/archive
+      - ./hocr_mount/books:/hocr_mount/books
     depends_on:
       - web-ui
       - web-api
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      - "HOCR_MOUNT_BASE=/hocr_mount/books"
+
   # UI Application
   web-ui:
     extends:
@@ -77,6 +98,7 @@ services:
       - static_data:/opt/invenio/var/instance/static
       - uploaded_data:/opt/invenio/var/instance/data
       - archived_data:/opt/invenio/var/instance/archive
+      - ./hocr_mount/books:/hocr_mount/books
     environment:
       - "AWS_ACCESS_KEY_ID=minioadmin"
       - "AWS_SECRET_ACCESS_KEY=minioadmin"
@@ -85,6 +107,7 @@ services:
       - "AWS_S3_ADDRESSING_STYLE=path"
       - "AWS_S3_SIGNATURE_VERSION=s3v4"
       - "S3_BUCKET_NAME=turath-files"
+      - "HOCR_MOUNT_BASE=/hocr_mount/books"
 
   # API Rest Application
   web-api:
@@ -98,6 +121,9 @@ services:
     volumes:
       - uploaded_data:/opt/invenio/var/instance/data
       - archived_data:/opt/invenio/var/instance/archive
+      - ./hocr_mount/books:/hocr_mount/books
+    environment:
+      - "HOCR_MOUNT_BASE=/hocr_mount/books"
 
   # Worker
   worker:
@@ -108,6 +134,9 @@ services:
     image: turath-inveniordm:latest
     volumes:
       - uploaded_data:/opt/invenio/var/instance/data
+      - ./hocr_mount/books:/hocr_mount/books
+    environment:
+      - "HOCR_MOUNT_BASE=/hocr_mount/books"
     depends_on:
       search:
         condition: service_started
