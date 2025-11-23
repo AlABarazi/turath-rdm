@@ -6,6 +6,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+# Copy certificates
+COPY certs/ /app/certs/
 
 ENV HOCR_BASE_DIR=/hocr_mount/books
 ENV SEARCH_SERVICE_BASE_URL=https://127.0.0.1:5001
@@ -13,4 +15,4 @@ ENV IIIF_SERVER_BASE_URL=https://127.0.0.1:5000
 
 EXPOSE 5001
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "--keyfile", "/app/certs/server.key", "--certfile", "/app/certs/server.crt", "app:app"]
