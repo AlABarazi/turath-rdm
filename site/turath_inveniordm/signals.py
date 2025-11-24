@@ -8,11 +8,13 @@ import os
 import shutil
 import logging
 from invenio_rdm_records.records.api import RDMRecord
+from invenio_rdm_records.proxies import current_rdm_records_service
 from invenio_records.signals import (
     after_record_insert,
     after_record_update,
     before_record_delete
 )
+from .fulltext import extract_hocr_text
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +186,27 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
         hocr_count = sync_hocr_to_filesystem(record)
         if hocr_count == 0:
             logger.info(f"ℹ️ Record {record_pid} has no HOCR files")
+        else:
+            # T7: Unified Search - Indexing
+            try:
+                logger.info(f"🔍 Extracting fulltext for {record_pid}...")
+                fulltext = extract_hocr_text(record_pid)
+                if fulltext:
+                    # Inject into top-level field (not custom_fields to avoid UI display)
+                    # NOTE: This requires 'fulltext' to be allowed by the schema or dynamic mapping
+                    record['fulltext'] = fulltext
+                    
+                    # We must commit because we are in 'after_...' signal (transaction closed?)
+                    # Actually, after_record_update is sent AFTER commit.
+                    # So we need to commit AGAIN and Re-index.
+                    record.commit()
+                    current_rdm_records_service.indexer.index(record)
+                    logger.info(f"✅ Indexed fulltext ({len(fulltext)} chars) for {record_pid}")
+                else:
+                    logger.warning(f"⚠️ No text extracted for {record_pid}")
+            except Exception as e:
+                logger.error(f"❌ Failed to index fulltext for {record_pid}: {e}")
+
     else:
         logger.debug(f"Record {record_pid} has files disabled")
 
