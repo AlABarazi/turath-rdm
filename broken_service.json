@@ -1,0 +1,12 @@
+[
+  {
+    "@id": "https://127.0.0.1:5001/search/e1d5e-y0k71",
+    "profile": "http://iiif.io/api/search/0/search",
+    "label": "Search within this manifest",
+    "service": {
+      "@id": "https://127.0.0.1:5001/autocomplete/e1d5e-y0k71",
+      "profile": "http://iiif.io/api/search/0/autocomplete",
+      "label": "Autocomplete words in this manifest"
+    }
+  }
+]

@@ -362,55 +362,6 @@ def s3_client_from_env():
     )
 
 
-def ensure_fulltext_indexing(record_id: str):
-    """
-    Explicitly trigger HOCR sync and fulltext indexing for a record.
-    This runs via Invenio application context (server-side logic),
-    ensuring robust indexing even if HTTP signals were missed.
-    """
-    print(f"\n[Indexer] Ensuring fulltext indexing for {record_id}...")
-    try:
-        from invenio_app.factory import create_app
-        from invenio_pidstore.models import PersistentIdentifier
-        from invenio_rdm_records.records.api import RDMRecord
-        from invenio_rdm_records.proxies import current_rdm_records_service
-        from turath_inveniordm.signals import sync_hocr_to_filesystem
-        from turath_inveniordm.fulltext import extract_hocr_text
-        
-        app = create_app()
-        with app.app_context():
-            # Resolve PID
-            pid = PersistentIdentifier.get('recid', record_id)
-            record = RDMRecord.get_record(pid.object_uuid)
-            
-            # 1. Sync Files
-            print(f"[Indexer] Syncing HOCR files to disk...")
-            count = sync_hocr_to_filesystem(record)
-            print(f"[Indexer] Synced {count} files.")
-            
-            # 2. Extract Text
-            print(f"[Indexer] Extracting text...")
-            text = extract_hocr_text(record_id)
-            if text:
-                print(f"[Indexer] Extracted {len(text)} characters.")
-                # 3. Update Record
-                record.setdefault('custom_fields', {})['turath:fulltext'] = text
-                record.commit()
-                # 4. Index
-                print(f"[Indexer] Re-indexing record...")
-                current_rdm_records_service.indexer.index(record)
-                print(f"[Indexer] ✅ Success.")
-            else:
-                print(f"[Indexer] ⚠️ No text extracted (no HOCR?).")
-                
-    except ImportError:
-        print("[Indexer] ⚠️ Invenio packages not found. Skipping server-side indexing. Ensure you run with 'pipenv run'.")
-    except Exception as e:
-        print(f"[Indexer] ❌ Failed: {e}")
-        import traceback
-        traceback.print_exc()
-
-
 def mirror_pdf_to_cantaloupe(pdf_path: Path, book_id: str) -> Optional[Tuple[str, str]]:
     bucket = os.getenv("CANTALOUPE_S3_BUCKET")
     if not bucket:
@@ -517,9 +468,6 @@ def cmd_ingest_book(args):
 
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
-    
-    # Ensure fulltext indexing (server-side logic)
-    ensure_fulltext_indexing(record_id)
     
     # Return record_id for use by calling scripts
     return record_id
