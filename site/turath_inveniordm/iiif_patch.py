@@ -196,6 +196,10 @@ def patch_iiif_manifest_schema():
                                 "@context": "http://iiif.io/api/image/2/context.json",
                                 "@id": image_service_id,
                                 "profile": "http://iiif.io/api/image/2/level2.json",
+                                "tiles": [{
+                                    "width": 2048,
+                                    "scaleFactors": [1, 2, 4, 8, 16]
+                                }],
                             },
                             "width": w,
                             "height": h,
