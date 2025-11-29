@@ -119,7 +119,7 @@ def create_blueprint(app):
         except requests.RequestException:
             return Response("Upstream IIIF server unavailable", status=502)
 
-        excluded = {"transfer-encoding", "content-encoding", "connection"}
+        excluded = {"transfer-encoding", "content-encoding", "connection", "content-length"}
 
         # info.json rewrite to same-origin @id (preserve page-qualified '@id' when pN used)
         if op_part.endswith("info.json"):
