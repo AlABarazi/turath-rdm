@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "01122e52628256c8326cef605d7ab8afbda972c0f53d06ae82a38ebe353591f3"
+            "sha256": "beae870e286f65a1a78e1aa2a4455afc083c87dfd5984a40c5eaf86afb6ab279"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -994,6 +994,15 @@
             "markers": "python_version >= '3.7'",
             "version": "==1.5.0"
         },
+        "img2pdf": {
+            "hashes": [
+                "sha256:219518020f5bd242bdc46493941ea3f756f664c2e86f2454721e74353f58cd95",
+                "sha256:44d12d235752edd17c43c04ff39952cdc5dd4c6aba90569c4902bd445085266b"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.5'",
+            "version": "==0.6.3"
+        },
         "importlib-metadata": {
             "hashes": [
                 "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000",
@@ -1749,6 +1758,7 @@
                 "sha256:fbc74f42c3525ac4ffa4b89cbdd00057b6196bcefe8bce794abd42d33a018092",
                 "sha256:fe659f6b5d10fb5a17f00a50eb903eb277a71ee35df4615db573c069bcf967ac"
             ],
+            "index": "pypi",
             "markers": "python_version >= '3.8'",
             "version": "==6.0.2"
         },

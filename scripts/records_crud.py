@@ -36,6 +36,7 @@ import argparse
 import hashlib
 import os
 import sys
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -428,6 +429,20 @@ def mirror_pdf_to_cantaloupe(pdf_path: Path, book_id: str) -> Optional[Tuple[str
     return bucket, key
 
 
+def mirror_pdf_to_local_disk(pdf_path: Path, record_id: str, pdf_key: str) -> None:
+    """Mirror PDF to local shared volume for FilesystemSource."""
+    # Base dir is ./cantaloupe-files (mounted to /opt/cantaloupe/images in docker)
+    base_dir = Path("cantaloupe-files")
+    base_dir.mkdir(exist_ok=True)
+    
+    target_dir = base_dir / record_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    target_file = target_dir / pdf_key
+    print(f"[mirror] Copying PDF to local disk: {target_file}...")
+    shutil.copy(pdf_path, target_file)
+
+
 # ---------- commands ----------
 
 def cmd_ingest_book(args):
@@ -514,6 +529,9 @@ def cmd_ingest_book(args):
         iiif_base = os.getenv("IIIF_IMAGE_BASE", "http://127.0.0.1:8182")
         iiif_full = f"{iiif_base}/iiif/2/{key}/full/full/0/default.jpg?page=1"
         print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
+
+    # Mirror to local disk (FilesystemSource)
+    mirror_pdf_to_local_disk(pdf, record_id, pdf.name)
 
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})

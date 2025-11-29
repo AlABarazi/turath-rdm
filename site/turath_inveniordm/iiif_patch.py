@@ -136,9 +136,10 @@ def patch_iiif_manifest_schema():
                     continue
         page_count = max(page_nums) if page_nums else 1
 
-        # Build encoded IIIF identifier using the app UI file URL (works with HttpSource)
-        full_url = f"https://host.docker.internal:5000/records/{record_pid}/files/{pdf_key}"
-        enc_id = quote(full_url, safe='')
+        # Build encoded IIIF identifier using FilesystemSource path (relative to /opt/cantaloupe/images)
+        # Format: {record_pid}/{pdf_key}
+        # Note: The file MUST be mirrored to the shared volume at this path.
+        enc_id = quote(f"{record_pid}/{pdf_key}", safe='')
 
         # Helper to fetch per-page dimensions from Cantaloupe info.json
         # OPTIMIZATION: Disabled for now - fetching dims for 464 pages takes too long!

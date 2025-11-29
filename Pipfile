@@ -22,6 +22,7 @@ invenio-communities = ">=19.0.0,<20.0.0"
 turath-inveniordm = {file = "site", editable = true}
 beautifulsoup4 = "*"
 lxml = "*"
+img2pdf = "*"
 
 [requires]
 python_version = "3.9"
