@@ -96,6 +96,7 @@ celerybeat-schedule.db
 # Data mounts
 hocr_mount/
 cantaloupe-cache/
+cantaloupe-files/
 app_data/back/
 
 # macOS
