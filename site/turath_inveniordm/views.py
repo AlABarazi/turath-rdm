@@ -97,6 +97,9 @@ def create_blueprint(app):
             qs = (qs + ("&" if qs else "") + f"page={page_param}")
         if qs:
             target_url = f"{target_url}?{qs}"
+            
+        # DEBUG LOGGING
+        print(f"🔀 IIIF Proxy: {path} -> {target_url}")
 
         # Forward selected headers
         fwd_headers = {}
@@ -132,6 +135,14 @@ def create_blueprint(app):
                 base_id = f"{base_id}/p{page_param}"
             if isinstance(data, dict):
                 data["@id"] = base_id
+                # FORCE large tiles to workaround Cantaloupe PdfBoxProcessor region bug
+                # Cantaloupe seems to ignore 'y' offset for PDFs, returning full page for any region.
+                # By forcing 2048px tiles, Mirador requests the full page (0,0,w,h) in one go,
+                # which matches what Cantaloupe returns.
+                data["tiles"] = [{
+                    "width": 2048,
+                    "scaleFactors": [1, 2, 4, 8, 16, 32]
+                }]
             body = json.dumps(data)
             resp_headers = [
                 (k, v) for k, v in upstream.headers.items() if k.lower() not in excluded
