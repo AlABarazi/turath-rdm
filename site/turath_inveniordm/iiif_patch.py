@@ -142,27 +142,26 @@ def patch_iiif_manifest_schema():
         enc_id = quote(f"{record_pid}/{pdf_key}", safe='')
 
         # Helper to fetch per-page dimensions from Cantaloupe info.json
-        # OPTIMIZATION: Disabled for now - fetching dims for 464 pages takes too long!
-        # TODO: Cache dimensions or fetch asynchronously
+        # Now safe to enable because FilesystemSource avoids deadlock!
+        # Use a session to reuse TCP connection for speed
+        session = requests.Session()
+        
         def get_dims(page: int):
-            # Skip Cantaloupe calls - use sensible defaults
-            # A4 page at 150 DPI: ~1240 x 1754
-            return 1240, 1754
+            try:
+                # Direct call to Cantaloupe (fast via FilesystemSource)
+                info_url = f"http://127.0.0.1:8182/iiif/2/{enc_id}/info.json?page={page}"
+                ir = session.get(info_url, timeout=2) # Short timeout
+                if ir.ok:
+                    j = ir.json()
+                    w = int(j.get('width') or 0)
+                    h = int(j.get('height') or 0)
+                    if w > 0 and h > 0:
+                        return w, h
+            except Exception:
+                pass
             
-            # Original code (disabled):
-            # try:
-            #     info_url = f"http://127.0.0.1:8182/iiif/2/{enc_id}/info.json?page={page}"
-            #     ir = requests.get(info_url, timeout=10)
-            #     if ir.ok:
-            #         j = ir.json()
-            #         w = int(j.get('width') or 0)
-            #         h = int(j.get('height') or 0)
-            #         if w > 0 and h > 0:
-            #             return w, h
-            # except Exception:
-            #     pass
-            # # Sensible fallback
-            # return 1024, 1024
+            # Fallback if Cantaloupe is down or fails
+            return 1240, 1754
 
         # Construct sequence and canvases
         seq_id = f"{app_base}/records/{record_pid}/sequence/normal"
