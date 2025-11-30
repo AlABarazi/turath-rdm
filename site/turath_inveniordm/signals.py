@@ -23,92 +23,86 @@ logger = logging.getLogger(__name__)
 HOCR_MOUNT_BASE = os.environ.get('HOCR_MOUNT_BASE', os.path.join(os.getcwd(), 'hocr_mount/books'))
 
 
-# Base directory for FilesystemSource (PDFs)
-# Mounted at /opt/cantaloupe/images in docker
-CANTALOUPE_MOUNT_BASE = os.path.join(os.getcwd(), 'cantaloupe-files')
-
-
-def sync_files_to_filesystem(record):
+def sync_hocr_to_filesystem(record):
     """
-    Sync PDF and HOCR files from record to filesystem.
-    
-    Structure:
-    - PDFs: {record_pid}/{filename.pdf}  (for Cantaloupe)
-    - HOCR: {record_pid}/hocr/{filename.hocr} (for Search)
+    Sync HOCR files from record to filesystem.
     
     Args:
         record: RDMRecord instance with files
     
     Returns:
-        tuple: (pdf_count, hocr_count)
+        int: Number of HOCR files synced
     """
     if not record.files.enabled:
         logger.debug(f"Files not enabled for record {record.pid.pid_value}")
-        return 0, 0
+        return 0
     
     record_pid = record.pid.pid_value
-    
-    # Directories
-    # PDF goes to root of record folder for cleaner IIIF IDs
-    pdf_dir = os.path.join(CANTALOUPE_MOUNT_BASE, record_pid)
     hocr_dir = os.path.join(HOCR_MOUNT_BASE, record_pid, 'hocr')
     
-    # Ensure directories exist
+    # Remove old directory if exists (for updates)
+    if os.path.exists(hocr_dir):
+        try:
+            shutil.rmtree(hocr_dir)
+            logger.info(f"Removed old HOCR cache for {record_pid}")
+        except Exception as e:
+            logger.error(f"Failed to remove old HOCR for {record_pid}: {e}")
+            return 0
+    
+    # Create fresh directory
     try:
-        os.makedirs(pdf_dir, exist_ok=True)
         os.makedirs(hocr_dir, exist_ok=True)
     except Exception as e:
-        logger.error(f"Failed to create directories for {record_pid}: {e}")
-        return 0, 0
+        logger.error(f"Failed to create HOCR directory for {record_pid}: {e}")
+        return 0
     
-    pdf_count = 0
+    # Copy all .hocr files
     hocr_count = 0
-    
     for file_key in record.files.entries.keys():
-        try:
-            file_obj = record.files[file_key]
-            
-            # Determine target
-            target_path = None
-            if file_key.lower().endswith('.pdf'):
-                target_path = os.path.join(pdf_dir, file_key)
-                pdf_count += 1
-            elif file_key.lower().endswith('.hocr'):
-                target_path = os.path.join(hocr_dir, file_key)
-                hocr_count += 1
-            
-            if target_path:
+        if file_key.endswith('.hocr'):
+            try:
+                file_obj = record.files[file_key]
                 with file_obj.get_stream('rb') as source:
                     content = source.read()
+                
+                target_path = os.path.join(hocr_dir, file_key)
                 with open(target_path, 'wb') as f:
                     f.write(content)
-                logger.debug(f"Synced {file_key} to {target_path}")
                 
-        except Exception as e:
-            logger.error(f"Failed to sync {file_key} for {record_pid}: {e}")
+                hocr_count += 1
+                logger.debug(f"Synced {file_key} for {record_pid}")
+            except Exception as e:
+                logger.error(f"Failed to sync {file_key} for {record_pid}: {e}")
     
-    if pdf_count > 0 or hocr_count > 0:
-        logger.info(f"✅ Synced {pdf_count} PDFs and {hocr_count} HOCRs for {record_pid}")
+    if hocr_count > 0:
+        logger.info(f"✅ Synced {hocr_count} HOCR files for record {record_pid}")
     
-    return pdf_count, hocr_count
+    return hocr_count
 
 
-def cleanup_filesystem_cache(record_pid):
+def cleanup_hocr_from_filesystem(record_pid):
     """
-    Remove both PDF and HOCR caches for a record PID.
+    Remove HOCR filesystem cache for a record PID.
+    
+    Args:
+        record_pid: String record PID
+    
+    Returns:
+        bool: True if cleanup successful
     """
-    # Cleanup HOCR
-    hocr_path = os.path.join(HOCR_MOUNT_BASE, record_pid)
-    if os.path.exists(hocr_path):
-        shutil.rmtree(hocr_path, ignore_errors=True)
-        
-    # Cleanup PDF (Cantaloupe)
-    pdf_path = os.path.join(CANTALOUPE_MOUNT_BASE, record_pid)
-    if os.path.exists(pdf_path):
-        shutil.rmtree(pdf_path, ignore_errors=True)
-        
-    logger.info(f"🗑️ Cleaned up filesystem cache for {record_pid}")
-    return True
+    hocr_base_dir = os.path.join(HOCR_MOUNT_BASE, record_pid)
+    
+    if not os.path.exists(hocr_base_dir):
+        logger.debug(f"No HOCR cache to clean for {record_pid}")
+        return True
+    
+    try:
+        shutil.rmtree(hocr_base_dir)
+        logger.info(f"🗑️ Cleaned up HOCR cache for {record_pid}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to cleanup HOCR for {record_pid}: {e}")
+        return False
 
 
 def cleanup_old_versions_for_parent(parent_id, except_pid=None):
@@ -133,9 +127,9 @@ def cleanup_old_versions_for_parent(parent_id, except_pid=None):
 
 @after_record_insert.connect
 @after_record_update.connect
-def comprehensive_filesystem_sync(sender, record=None, **kwargs):
+def comprehensive_hocr_handler(sender, record=None, **kwargs):
     """
-    Comprehensive filesystem sync handler for all record lifecycle events.
+    Comprehensive HOCR sync handler for all record lifecycle events.
     
     Handles:
     - New record publish
@@ -160,8 +154,8 @@ def comprehensive_filesystem_sync(sender, record=None, **kwargs):
     # InvenioRDM doesn't physically delete records!
     # It sets is_deleted=True flag instead
     if record.get('is_deleted', False):
-        logger.info(f"🪦 Record {record_pid} soft deleted - cleaning up filesystem")
-        cleanup_filesystem_cache(record_pid)
+        logger.info(f"🪦 Record {record_pid} soft deleted - cleaning up HOCR")
+        cleanup_hocr_from_filesystem(record_pid)
         return
     
     # =============================
@@ -187,31 +181,27 @@ def comprehensive_filesystem_sync(sender, record=None, **kwargs):
     # =============================
     # SCENARIO 4 & 5: Normal Sync
     # =============================
-    # Publish or update - sync Files (PDF + HOCR)
+    # Publish or update - sync HOCR files
     if record.files.enabled:
-        pdf_count, hocr_count = sync_files_to_filesystem(record)
-        
-        if hocr_count > 0:
+        hocr_count = sync_hocr_to_filesystem(record)
+        if hocr_count == 0:
+            logger.info(f"ℹ️ Record {record_pid} has no HOCR files")
+        else:
             # T7: Unified Search - Indexing
             try:
                 logger.info(f"🔍 Extracting fulltext for {record_pid}...")
                 fulltext = extract_hocr_text(record_pid)
-                
                 if fulltext:
-                    # FIX: Use correct custom field path
-                    custom_fields = record.setdefault('custom_fields', {})
-                    current_val = custom_fields.get('turath:fulltext')
+                    # Inject into top-level field (not custom_fields to avoid UI display)
+                    # NOTE: This requires 'fulltext' to be allowed by the schema or dynamic mapping
+                    record['fulltext'] = fulltext
                     
-                    # FIX: Prevent infinite loop - only update if changed
-                    if current_val != fulltext:
-                        custom_fields['turath:fulltext'] = fulltext
-                        
-                        # We must commit because we are in 'after_...' signal
-                        record.commit()
-                        current_rdm_records_service.indexer.index(record)
-                        logger.info(f"✅ Indexed fulltext ({len(fulltext)} chars) for {record_pid}")
-                    else:
-                        logger.debug(f"Fulltext unchanged for {record_pid}, skipping re-index")
+                    # We must commit because we are in 'after_...' signal (transaction closed?)
+                    # Actually, after_record_update is sent AFTER commit.
+                    # So we need to commit AGAIN and Re-index.
+                    record.commit()
+                    current_rdm_records_service.indexer.index(record)
+                    logger.info(f"✅ Indexed fulltext ({len(fulltext)} chars) for {record_pid}")
                 else:
                     logger.warning(f"⚠️ No text extracted for {record_pid}")
             except Exception as e:
@@ -227,10 +217,18 @@ def comprehensive_filesystem_sync(sender, record=None, **kwargs):
 @before_record_delete.connect
 def handle_hard_delete(sender, record=None, **kwargs):
     """
-    Clean up filesystem when record is HARD deleted (rare).
+    Clean up HOCR when record is HARD deleted (rare).
+    
+    NOTE: InvenioRDM normally uses SOFT delete (is_deleted flag).
+    This signal only fires for:
+    - Admin force delete via CLI
+    - API delete with force flag
+    - Direct database deletion
+    
+    Most deletions are handled in comprehensive_hocr_handler via is_deleted flag.
     """
     if not isinstance(record, RDMRecord):
         return
     
     logger.info(f"🗑️ Hard delete signal for {record.pid.pid_value}")
-    cleanup_filesystem_cache(record.pid.pid_value)
+    cleanup_hocr_from_filesystem(record.pid.pid_value)

@@ -10,6 +10,7 @@ This avoids forking core code while meeting our manifest schema requirements.
 """
 
 import re
+import os
 from urllib.parse import quote
 
 import requests
@@ -141,26 +142,40 @@ def patch_iiif_manifest_schema():
         # Note: The file MUST be mirrored to the shared volume at this path.
         enc_id = quote(f"{record_pid}/{pdf_key}", safe='')
 
-        # Helper to fetch per-page dimensions from Cantaloupe info.json
-        # Now safe to enable because FilesystemSource avoids deadlock!
-        # Use a session to reuse TCP connection for speed
-        session = requests.Session()
-        
+        # Helper to fetch per-page dimensions from local HOCR files
         def get_dims(page: int):
             try:
-                # Direct call to Cantaloupe (fast via FilesystemSource)
-                info_url = f"http://127.0.0.1:8182/iiif/2/{enc_id}/info.json?page={page}"
-                ir = session.get(info_url, timeout=2) # Short timeout
-                if ir.ok:
-                    j = ir.json()
-                    w = int(j.get('width') or 0)
-                    h = int(j.get('height') or 0)
-                    if w > 0 and h > 0:
-                        return w, h
+                # Try to read dimensions from local HOCR file if available
+                # This assumes HOCR files are synced to a mounted volume
+                hocr_base = os.environ.get("HOCR_MOUNT_BASE")
+                if not hocr_base:
+                    # Auto-detect path: Docker absolute vs Local relative
+                    if os.path.exists("/hocr_mount/books"):
+                        hocr_base = "/hocr_mount/books"
+                    else:
+                        hocr_base = "hocr_mount/books"
+                
+                # HOCR files are stored in a 'hocr' subdirectory by signals.py
+                hocr_path = os.path.join(hocr_base, record_pid, "hocr", f"{page:03d}.hocr")
+                
+                if os.path.exists(hocr_path):
+                    with open(hocr_path, 'r', encoding='utf-8') as f:
+                        # Read first 2048 bytes - header contains the page bbox
+                        chunk = f.read(2048)
+                        # Look for: title='... bbox x0 y0 x1 y1 ...'
+                        # Standard HOCR: <div class='ocr_page' ... title='... bbox 0 0 1240 1754 ...'>
+                        m = re.search(r"bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)", chunk)
+                        if m:
+                            x0, y0, x1, y1 = map(int, m.groups())
+                            w = x1 - x0
+                            h = y1 - y0
+                            if w > 0 and h > 0:
+                                return w, h
             except Exception:
-                pass
-            
-            # Fallback if Cantaloupe is down or fails
+                pass # Fallback to default on error
+                
+            # Skip Cantaloupe calls (too slow) - use sensible defaults
+            # A4 page at 150 DPI: ~1240 x 1754
             return 1240, 1754
 
         # Construct sequence and canvases
@@ -196,10 +211,6 @@ def patch_iiif_manifest_schema():
                                 "@context": "http://iiif.io/api/image/2/context.json",
                                 "@id": image_service_id,
                                 "profile": "http://iiif.io/api/image/2/level2.json",
-                                "tiles": [{
-                                    "width": 2048,
-                                    "scaleFactors": [1, 2, 4, 8, 16]
-                                }],
                             },
                             "width": w,
                             "height": h,

@@ -96,7 +96,6 @@ celerybeat-schedule.db
 # Data mounts
 hocr_mount/
 cantaloupe-cache/
-cantaloupe-files/
 app_data/back/
 
 # macOS
@@ -145,4 +144,4 @@ instance/
 tmp/
 celerybeat.pid
 uwsgi.log
-uwsgi.pid
+uwsgi.pidcantaloupe-files/

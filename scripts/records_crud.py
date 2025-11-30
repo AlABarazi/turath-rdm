@@ -375,7 +375,7 @@ def ensure_fulltext_indexing(record_id: str):
         from invenio_pidstore.models import PersistentIdentifier
         from invenio_rdm_records.records.api import RDMRecord
         from invenio_rdm_records.proxies import current_rdm_records_service
-        from turath_inveniordm.signals import sync_files_to_filesystem
+        from turath_inveniordm.signals import sync_hocr_to_filesystem
         from turath_inveniordm.fulltext import extract_hocr_text
         
         app = create_app()
@@ -385,9 +385,9 @@ def ensure_fulltext_indexing(record_id: str):
             record = RDMRecord.get_record(pid.object_uuid)
             
             # 1. Sync Files
-            print(f"[Indexer] Syncing files to disk...")
-            pdf_count, hocr_count = sync_files_to_filesystem(record)
-            print(f"[Indexer] Synced {pdf_count} PDFs and {hocr_count} HOCRs.")
+            print(f"[Indexer] Syncing HOCR files to disk...")
+            count = sync_hocr_to_filesystem(record)
+            print(f"[Indexer] Synced {count} files.")
             
             # 2. Extract Text
             print(f"[Indexer] Extracting text...")
