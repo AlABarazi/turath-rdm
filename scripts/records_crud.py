@@ -429,8 +429,24 @@ def mirror_pdf_to_cantaloupe(pdf_path: Path, book_id: str) -> Optional[Tuple[str
     return bucket, key
 
 
-def mirror_pdf_to_local_disk(pdf_path: Path, record_id: str, pdf_key: str) -> None:
-    """Mirror PDF to local shared volume for FilesystemSource."""
+def get_hocr_dims(hocr_path: Path) -> Optional[Tuple[int, int]]:
+    """Extract page dimensions (width, height) from HOCR title attribute."""
+    try:
+        content = hocr_path.read_text(encoding='utf-8', errors='ignore')
+        # Look for ocr_page ... bbox 0 0 1380 2058
+        # Pattern: class=['"]ocr_page['"]...bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)
+        import re
+        m = re.search(r'class=[\'"]ocr_page[\'"].*?bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)', content, re.DOTALL)
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            return (x2 - x1), (y2 - y1)
+    except Exception:
+        pass
+    return None
+
+
+def mirror_pdf_to_local_disk(pdf_path: Path, record_id: str, pdf_key: str, book_dir: Path = None) -> None:
+    """Mirror PDF to local shared volume for FilesystemSource and cache dimensions (preferring HOCR)."""
     # Base dir is ./cantaloupe-files (mounted to /opt/cantaloupe/images in docker)
     base_dir = Path("cantaloupe-files")
     base_dir.mkdir(exist_ok=True)
@@ -441,6 +457,49 @@ def mirror_pdf_to_local_disk(pdf_path: Path, record_id: str, pdf_key: str) -> No
     target_file = target_dir / pdf_key
     print(f"[mirror] Copying PDF to local disk: {target_file}...")
     shutil.copy(pdf_path, target_file)
+
+    # Extract dimensions for IIIF manifest
+    try:
+        import json
+        from pypdf import PdfReader
+        
+        print(f"[mirror] Extracting dimensions from {pdf_path}...")
+        reader = PdfReader(pdf_path)
+        dims = []
+        hocr_count = 0
+        
+        for i, page in enumerate(reader.pages):
+            # 1. Default: Extract width/height from PDF (points)
+            # Assuming Cantaloupe renders 1pt = 1px by default, OR Mirador scales image to canvas.
+            w = int(float(page.mediabox.width))
+            h = int(float(page.mediabox.height))
+            
+            # 2. Override: Check HOCR for exact pixel dimensions (Crucial for annotation alignment)
+            if book_dir:
+                hocr_name = f"{i+1:03d}.hocr"
+                hocr_file = book_dir / hocr_name
+                if not hocr_file.exists():
+                    hocr_file = book_dir / "hocr" / hocr_name
+                
+                if hocr_file.exists():
+                    hocr_dim = get_hocr_dims(hocr_file)
+                    if hocr_dim:
+                        w, h = hocr_dim
+                        hocr_count += 1
+
+            dims.append({"w": w, "h": h})
+            
+        dims_file = target_dir / "dimensions.json"
+        with open(dims_file, "w") as f:
+            json.dump(dims, f)
+        
+        msg = f"[mirror] Saved dimensions for {len(dims)} pages to {dims_file}"
+        if hocr_count > 0:
+            msg += f" ({hocr_count} from HOCR)"
+        print(msg)
+            
+    except Exception as e:
+        print(f"[mirror] Failed to extract dimensions (skipping): {e}")
 
 
 # ---------- commands ----------
@@ -531,7 +590,7 @@ def cmd_ingest_book(args):
         print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
 
     # Mirror to local disk (FilesystemSource)
-    mirror_pdf_to_local_disk(pdf, record_id, pdf.name)
+    mirror_pdf_to_local_disk(pdf, record_id, pdf.name, book_dir=book_dir)
 
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})

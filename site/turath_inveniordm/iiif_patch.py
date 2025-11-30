@@ -10,7 +10,8 @@ This avoids forking core code while meeting our manifest schema requirements.
 """
 
 import re
-import os
+import json
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -142,40 +143,26 @@ def patch_iiif_manifest_schema():
         # Note: The file MUST be mirrored to the shared volume at this path.
         enc_id = quote(f"{record_pid}/{pdf_key}", safe='')
 
-        # Helper to fetch per-page dimensions from local HOCR files
+        # Load dimensions cache if available (generated during ingestion)
+        cached_dims = []
+        try:
+            # Path must match mirroring logic: ./cantaloupe-files/{record_pid}/dimensions.json
+            # This works in local dev where app runs on host and cantaloupe-files is in CWD.
+            dims_path = Path("cantaloupe-files") / record_pid / "dimensions.json"
+            if dims_path.exists():
+                with open(dims_path, "r") as f:
+                    cached_dims = json.load(f)
+        except Exception:
+            pass # Silent fail to default
+
+        # Helper to fetch per-page dimensions
         def get_dims(page: int):
-            try:
-                # Try to read dimensions from local HOCR file if available
-                # This assumes HOCR files are synced to a mounted volume
-                hocr_base = os.environ.get("HOCR_MOUNT_BASE")
-                if not hocr_base:
-                    # Auto-detect path: Docker absolute vs Local relative
-                    if os.path.exists("/hocr_mount/books"):
-                        hocr_base = "/hocr_mount/books"
-                    else:
-                        hocr_base = "hocr_mount/books"
-                
-                # HOCR files are stored in a 'hocr' subdirectory by signals.py
-                hocr_path = os.path.join(hocr_base, record_pid, "hocr", f"{page:03d}.hocr")
-                
-                if os.path.exists(hocr_path):
-                    with open(hocr_path, 'r', encoding='utf-8') as f:
-                        # Read first 2048 bytes - header contains the page bbox
-                        chunk = f.read(2048)
-                        # Look for: title='... bbox x0 y0 x1 y1 ...'
-                        # Standard HOCR: <div class='ocr_page' ... title='... bbox 0 0 1240 1754 ...'>
-                        m = re.search(r"bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)", chunk)
-                        if m:
-                            x0, y0, x1, y1 = map(int, m.groups())
-                            w = x1 - x0
-                            h = y1 - y0
-                            if w > 0 and h > 0:
-                                return w, h
-            except Exception:
-                pass # Fallback to default on error
-                
-            # Skip Cantaloupe calls (too slow) - use sensible defaults
-            # A4 page at 150 DPI: ~1240 x 1754
+            # Use cached dimensions if available (page is 1-indexed)
+            if cached_dims and 0 <= page - 1 < len(cached_dims):
+                d = cached_dims[page - 1]
+                return d["w"], d["h"]
+            
+            # Fallback to standard A4 if no cache (fast but maybe misaligned)
             return 1240, 1754
 
         # Construct sequence and canvases

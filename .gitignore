@@ -144,4 +144,5 @@ instance/
 tmp/
 celerybeat.pid
 uwsgi.log
-uwsgi.pidcantaloupe-files/
+uwsgi.pid
+cantaloupe-files/
