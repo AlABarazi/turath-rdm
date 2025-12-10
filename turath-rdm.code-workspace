@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "../turath-inveniordm-feature-containerize-services"
+		},
+		{
+			"path": "../../../Downloads/turath-inveniordm-feature-local-archive-org-search"
 		}
 	],
 	"settings": {}

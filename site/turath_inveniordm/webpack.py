@@ -12,6 +12,10 @@ theme = WebpackThemeBundle(
                 # Add your webpack entrypoints
                 "turath-mirador-init": "./js/mirador_init.js",
             },
+            aliases={
+                # Force override of the component registry mapping
+                "@js/invenio_app_rdm/overridableRegistry/mapping": "js/invenio_app_rdm/overridableRegistry/mapping.js",
+            },
         ),
     },
 )

@@ -252,16 +252,41 @@ def init_files(base_url: str, token: str, record_id: str, keys: List[str]) -> di
 
 
 def upload_and_commit(base_url: str, token: str, record_id: str, key: str, file_path: Path) -> None:
+    import time
     content_url = f"{base_url}/api/records/{record_id}/draft/files/{key}/content"
     commit_url = f"{base_url}/api/records/{record_id}/draft/files/{key}/commit"
     with open(file_path, "rb") as f:
         data = f.read()
-    r_put = api_put_bytes(content_url, token, data)
-    if not r_put.ok:
-        raise RuntimeError(f"Upload failed for {key}: {r_put.status_code} {r_put.text}")
-    r_commit = api_post_empty(commit_url, token)
-    if not r_commit.ok:
-        raise RuntimeError(f"Commit failed for {key}: {r_commit.status_code} {r_commit.text}")
+    
+    # Retry params
+    retries = 5
+    delay = 2.0
+
+    # 1. Upload content
+    for attempt in range(retries):
+        r_put = api_put_bytes(content_url, token, data)
+        if r_put.status_code == 429:
+            if attempt < retries - 1:
+                wait = delay * (2 ** attempt)
+                print(f"⚠️  429 Rate Limit for {key} (upload). Retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+                continue
+        if not r_put.ok:
+            raise RuntimeError(f"Upload failed for {key}: {r_put.status_code} {r_put.text}")
+        break
+
+    # 2. Commit
+    for attempt in range(retries):
+        r_commit = api_post_empty(commit_url, token)
+        if r_commit.status_code == 429:
+            if attempt < retries - 1:
+                wait = delay * (2 ** attempt)
+                print(f"⚠️  429 Rate Limit for {key} (commit). Retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+                continue
+        if not r_commit.ok:
+            raise RuntimeError(f"Commit failed for {key}: {r_commit.status_code} {r_commit.text}")
+        break
 
 
 def publish(base_url: str, token: str, record_id: str) -> dict:
