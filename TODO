@@ -1,0 +1,7 @@
+* when user make full text search, search results should be displayed as pharases. This will require making customized react list item and link the relevant data stream with it
+* access pdfs and hocr files directly from S3 storage not from files system
+* Convert the pdfs into images for perfect hocr aliginment (future work)
+* change the image server to the faster one for optimized performance.
+* when user click on searh restult it open in mirador and placed inside the search box of mirador
+* login, signup, and forgot password should be implemented
+* Piple line architecture for processing pdfs and hocr files (future work)

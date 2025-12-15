@@ -11,16 +11,56 @@ export const TurathSearchBar = ({ onInputChange, ...props }) => {
   ];
 
   const handleSearch = (queryString) => {
+    const escapeLucenePhrase = (value) => {
+      return (value || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/\"/g, "\\\"");
+    };
+
+    const buildWildcardMetadataQuery = (value) => {
+      const trimmedValue = (value || "").trim();
+      if (!trimmedValue) {
+        return value;
+      }
+
+      if (
+        trimmedValue.includes(":") ||
+        trimmedValue.includes('"') ||
+        trimmedValue.includes("*") ||
+        trimmedValue.includes("?") ||
+        trimmedValue.includes("custom_fields.") ||
+        trimmedValue.includes("metadata.")
+      ) {
+        return value;
+      }
+
+      const tokens = trimmedValue.split(/\s+/).filter(Boolean);
+      const wrappedTokens = tokens.map((token) => {
+        const escapedToken = escapeLucenePhrase(token);
+        return `*${escapedToken}*`;
+      });
+      return wrappedTokens.join(" ");
+    };
+
     // If fulltext mode is selected, prefix the query
     // Note: We need to handle this carefully. React-SearchKit usually handles the state.
     // If we change the query string here, it might be visible to the user.
     // A better approach might be to use a query state transformer, but for UI override:
     
     let finalQuery = queryString;
-    if (searchMode === "fulltext" && queryString && !queryString.includes("custom_fields.turath:fulltext:")) {
+
+    if (searchMode === "metadata") {
+      finalQuery = buildWildcardMetadataQuery(finalQuery);
+    }
+    if (
+      searchMode === "fulltext" &&
+      queryString &&
+      !queryString.includes("custom_fields.turath\\:fulltext:")
+    ) {
        // Simple prefixing - this might look ugly in the search bar but effectively works
        // Ideally we hide this complexity, but standard Invenio search allows field:value syntax
-       finalQuery = `custom_fields.turath:fulltext:${queryString}`;
+       const escapedQuery = escapeLucenePhrase(queryString.trim());
+       finalQuery = `custom_fields.turath\\:fulltext:"${escapedQuery}"`;
     }
     
     // Pass to original handler if available, or let SearchKit handle it
@@ -42,9 +82,8 @@ export const TurathSearchBar = ({ onInputChange, ...props }) => {
         style={{ marginRight: "10px" }}
       />
       <SearchBar 
-        {...props} 
-        // We might need to intercept the search execution here
-        // Depending on SearchKit version, we might need to wrap the executeSearch action
+        {...props}
+        onSearch={handleSearch}
       />
     </div>
   );

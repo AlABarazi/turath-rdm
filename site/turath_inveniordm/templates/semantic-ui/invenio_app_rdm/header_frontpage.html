@@ -70,7 +70,7 @@
 </div>
 
 <script type="text/javascript">
-document.addEventListener('DOMContentLoaded', function () {
+ document.addEventListener('DOMContentLoaded', function () {
   const searchForm = document.getElementById('homepage-search-form');
   if (searchForm) {
     searchForm.addEventListener('submit', function (event) {
@@ -78,13 +78,52 @@ document.addEventListener('DOMContentLoaded', function () {
       const searchInput = searchForm.querySelector('input[name="q"]');
       const originalQuery = searchInput.value;
 
+      const escapeLucenePhrase = (value) => {
+        return (value || "")
+          .replace(/\\/g, "\\\\")
+          .replace(/\"/g, "\\\"");
+      };
+
+      const buildWildcardMetadataQuery = (value) => {
+        const trimmedValue = (value || "").trim();
+        if (!trimmedValue) {
+          return value;
+        }
+
+        if (
+          trimmedValue.includes(":") ||
+          trimmedValue.includes('"') ||
+          trimmedValue.includes("*") ||
+          trimmedValue.includes("?") ||
+          trimmedValue.includes("custom_fields.") ||
+          trimmedValue.includes("metadata.")
+        ) {
+          return value;
+        }
+
+        const tokens = trimmedValue.split(/\s+/).filter(Boolean);
+        const wrappedTokens = tokens.map((token) => {
+          const escapedToken = escapeLucenePhrase(token);
+          return `*${escapedToken}*`;
+        });
+        return wrappedTokens.join(" ");
+      };
+
       if (selectedSearchType && selectedSearchType.value === 'fulltext') {
         // If Full Text is selected, prefix the query before submitting
         // But we don't want to change the visual input if possible, 
         // however for a simple form submit, modifying the value is the easiest way to send the right param.
-        if (originalQuery.trim() !== '' && !originalQuery.includes('custom_fields.turath:fulltext:')) {
-             searchInput.value = `custom_fields.turath:fulltext:${originalQuery}`;
+        if (
+          originalQuery.trim() !== '' &&
+          !originalQuery.includes('custom_fields.turath\\:fulltext:')
+        ) {
+          const escapedQuery = escapeLucenePhrase(originalQuery.trim());
+          searchInput.value = `custom_fields.turath\\:fulltext:"${escapedQuery}"`;
         }
+      }
+
+      if (selectedSearchType && selectedSearchType.value === 'metadata') {
+        searchInput.value = buildWildcardMetadataQuery(originalQuery);
       }
       // Form submits normally to /search with the (potentially modified) q parameter
     });
