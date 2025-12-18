@@ -8,4 +8,8 @@
  * Add here all the overridden components of your app.
  */
 
-export const overriddenComponents = {}
+import { TurathSearchBarElement } from "./TurathSearchBarElement";
+
+export const overriddenComponents = {
+  "InvenioAppRdm.Search.SearchBar.element": TurathSearchBarElement,
+};

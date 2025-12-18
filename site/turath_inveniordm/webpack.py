@@ -11,6 +11,9 @@ theme = WebpackThemeBundle(
             entry={
                 # Add your webpack entrypoints
                 "turath-mirador-init": "./js/mirador_init.js",
+                "turath-base-theme-rdm": (
+                    "./js/turath_inveniordm/turath_base_theme_rdm.js"
+                ),
             },
             aliases={
                 # Force override of the component registry mapping
