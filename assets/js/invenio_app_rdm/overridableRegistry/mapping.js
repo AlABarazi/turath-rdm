@@ -9,7 +9,9 @@
  */
 
 import { TurathSearchBarElement } from "./TurathSearchBarElement";
+import { TurathResultsListItemCard } from "./TurathResultsListItemCard";
 
 export const overriddenComponents = {
   "InvenioAppRdm.Search.SearchBar.element": TurathSearchBarElement,
+  "InvenioAppRdm.Search.ResultsList.item": TurathResultsListItemCard,
 };

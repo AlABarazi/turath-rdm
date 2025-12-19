@@ -5,3 +5,9 @@
 * when user click on searh restult it open in mirador and placed inside the search box of mirador
 * login, signup, and forgot password should be implemented
 * Piple line architecture for processing pdfs and hocr files (future work)
+* Clean up - Cheak and remove unecessary files and folders 
+* localization
+/Users/alaaalbarazi/Projects/Turath/turath-rdm/site/turath_inveniordm/assets/semantic-ui/js/invenio_app_rdm/overridableRegistry
+/Users/alaaalbarazi/Projects/Turath/turath-rdm/site/turath_inveniordm/assets/semantic-ui/js/turath_inveniordm/search
+/
+
