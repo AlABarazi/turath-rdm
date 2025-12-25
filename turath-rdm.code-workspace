@@ -7,20 +7,13 @@
 			"path": "../../../Library/CloudStorage/GoogleDrive-alaabarazi@gmail.com/My Drive/Coding/resources"
 		},
 		{
-			"path": "../invenio-previewer-mirador-feature-issue-1-mirador-integration"
-		},
-		{
-			"path": "../zenodo-rdm-21.2.1"
-		},
-		{
 			"path": "../chronicals"
 		},
 		{
-			"path": "../turath-inveniordm-feature-containerize-services"
-		},
-		{
-			"path": "../../../Downloads/turath-inveniordm-feature-local-archive-org-search"
+			"path": "../inveniordm-terraform-feature-deployment-scripts-and-docs"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "chronicals"
+	}
 }

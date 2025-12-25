@@ -12,6 +12,16 @@
 {#- Remove search field from top bar on frontpage #}
 {%- block navbar_search %}{% endblock %}
 
+{%- block brand %}
+  <a class="logo-link turath-home-branding" href="/">
+    <img
+      class="ui image turath-home-branding-logo"
+      src="{{ url_for('static', filename='images/Turath Logo with Tagline for Homepage.png') }}"
+      alt="{{ _('Turath') }}"
+    />
+  </a>
+{%- endblock brand %}
+
 {%- block navbar %}
 {{ super() }}
 

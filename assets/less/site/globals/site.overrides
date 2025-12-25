@@ -1,0 +1,266 @@
+ .turath-branding {
+   display: flex;
+   align-items: center;
+   gap: 15px;
+ }
+ 
+ .turath-branding-tagline {
+   max-height: 55px;
+   max-width: 160px;
+   width: auto;
+   object-fit: contain;
+ }
+ 
+ .turath-branding-logo {
+   max-height: 70px;
+   width: auto;
+   object-fit: contain;
+ }
+
+ .turath-home-branding {
+   display: flex;
+   align-items: center;
+ }
+
+ .turath-home-branding-logo {
+   max-height: 70px;
+   width: auto;
+   object-fit: contain;
+ }
+
+ .turath-homepage-body,
+ .turath-homepage-body #main,
+ .turath-homepage-body .invenio-page-body {
+   height: 100vh;
+ }
+
+ .turath-homepage-body .invenio-page-body {
+   padding: 0;
+ }
+
+ .turath-homepage {
+   display: flex;
+   height: 100vh;
+   overflow: hidden;
+   background-color: #ffffff;
+ }
+
+ .turath-homepage-sidebar {
+   width: 350px;
+   min-width: 350px;
+   background-color: #e5eae7;
+   height: 100vh;
+   display: flex;
+   flex-direction: column;
+   border-right: 1px solid #d1d5db;
+   z-index: 20;
+   overflow-y: auto;
+ }
+
+ .turath-homepage-logo-container {
+   padding: 40px 30px 20px 30px;
+   flex-shrink: 0;
+ }
+
+ .turath-homepage-logo {
+   width: 100%;
+   height: auto;
+   display: block;
+ }
+
+ .turath-homepage-search-area {
+   padding: 0 30px;
+   flex-shrink: 0;
+ }
+
+ .turath-homepage-search-mode {
+   display: flex;
+   gap: 10px;
+   flex-wrap: wrap;
+   margin-bottom: 12px;
+ }
+
+ .turath-homepage-search-mode-option {
+   cursor: pointer;
+   user-select: none;
+ }
+
+ .turath-homepage-search-mode-option input {
+   position: absolute;
+   opacity: 0;
+   pointer-events: none;
+ }
+
+ .turath-homepage-search-mode-option span {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   padding: 8px 12px;
+   border: 1px solid #bcc2bf;
+   border-radius: 8px;
+   font-size: 13px;
+   font-weight: 600;
+   color: #000;
+   background: rgba(255, 255, 255, 0.6);
+ }
+
+ .turath-homepage-search-mode-option input:checked + span {
+   border-color: #c04030;
+   background: rgba(192, 64, 48, 0.08);
+   color: #c04030;
+ }
+
+ .turath-homepage-search-mode-option:focus-within span {
+   border-color: #c04030;
+   background: rgba(192, 64, 48, 0.08);
+ }
+
+ .turath-homepage-search-input {
+   width: 100%;
+   padding: 10px 15px;
+   border: 1.5px solid #c04030;
+   border-radius: 8px;
+   background: transparent;
+   font-style: italic;
+   outline: none;
+   margin-bottom: 15px;
+ }
+
+ .turath-homepage-browse-label {
+   font-size: 11px;
+   font-weight: bold;
+   color: #c04030;
+   text-transform: uppercase;
+   margin-bottom: 5px;
+ }
+
+ .turath-homepage-filter-item {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   padding: 12px 0;
+   border-bottom: 1px solid #bcc2bf;
+   color: #c04030;
+   text-decoration: none;
+   font-size: 14px;
+   font-weight: 500;
+ }
+
+ .turath-homepage-main-nav {
+   margin-top: 40px;
+   flex-grow: 1;
+ }
+
+ .turath-homepage-nav-link {
+   display: block;
+   padding: 20px 30px;
+   border-top: 1px solid #bcc2bf;
+   text-decoration: none;
+   color: #000;
+   font-weight: 900;
+   text-transform: uppercase;
+   font-size: 12px;
+   letter-spacing: 0.5px;
+ }
+
+ .turath-homepage-lang-footer {
+   padding: 20px 30px;
+   border-top: 1px solid #bcc2bf;
+   background-color: #e5eae7;
+   position: sticky;
+   bottom: 0;
+ }
+
+ .turath-homepage-lang-btn {
+   background: none;
+   border: none;
+   font-size: 20px;
+   font-weight: bold;
+   cursor: pointer;
+ }
+
+ .turath-homepage-main-content {
+   flex: 1;
+   position: relative;
+   background-color: #f3f4f6;
+ }
+
+ .turath-homepage-carousel {
+   width: 100%;
+   height: 100%;
+   position: relative;
+ }
+
+ .turath-homepage-carousel-img {
+   position: absolute;
+   top: 0;
+   left: 0;
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+   opacity: 0;
+   transition: opacity 1.5s ease;
+ }
+
+ .turath-homepage-carousel-img.active {
+   opacity: 1;
+ }
+
+ .turath-homepage-metadata-badge {
+   position: absolute;
+   bottom: 30px;
+   right: 30px;
+   background: rgba(255, 255, 255, 0.9);
+   padding: 8px 12px;
+   text-align: right;
+   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+ }
+
+ .turath-homepage-meta-en {
+   font-size: 11px;
+   font-weight: bold;
+   display: block;
+ }
+
+ .turath-homepage-meta-ar {
+   font-size: 12px;
+   font-weight: bold;
+   display: block;
+ }
+ 
+ @media (max-width: 768px) {
+   .turath-branding {
+     gap: 10px;
+   }
+ 
+   .turath-branding-tagline {
+     max-height: 40px;
+     max-width: 120px;
+   }
+ 
+   .turath-branding-logo {
+     max-height: 50px;
+   }
+
+   .turath-home-branding-logo {
+     max-height: 50px;
+   }
+
+   .turath-homepage {
+     flex-direction: column;
+     overflow-y: auto;
+     height: auto;
+   }
+
+   .turath-homepage-sidebar {
+     width: 100%;
+     min-width: 0;
+     height: auto;
+     border-right: none;
+     border-bottom: 1px solid #d1d5db;
+   }
+
+   .turath-homepage-main-content {
+     height: 500px;
+   }
+ }

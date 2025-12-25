@@ -1,0 +1,201 @@
+{%- extends "invenio_theme/frontpage.html" %}
+
+{%- set body_css_classes = (body_css_classes or []) + ["turath-homepage-body"] -%}
+
+{%- block page_header %}{%- endblock page_header %}
+
+{%- block page_body %}
+  <div class="turath-homepage">
+    <aside class="turath-homepage-sidebar">
+      <div class="turath-homepage-logo-container">
+        <img
+          class="turath-homepage-logo"
+          src="{{ url_for('static', filename='images/Turath Logo with Tagline for Homepage.png') }}"
+          alt="{{ _('Turath') }}"
+        />
+      </div>
+
+      <div class="turath-homepage-search-area">
+        <form
+          class="turath-homepage-search-form"
+          action="{{ url_for('invenio_search_ui.search') }}"
+          role="search"
+        >
+          <p class="turath-homepage-browse-label">Search by:</p>
+          <div class="turath-homepage-search-mode" role="radiogroup">
+            <label class="turath-homepage-search-mode-option">
+              <input
+                type="radio"
+                name="turath_search_mode"
+                value="metadata"
+                checked
+              />
+              <span>Metadata</span>
+            </label>
+            <label class="turath-homepage-search-mode-option">
+              <input
+                type="radio"
+                name="turath_search_mode"
+                value="fulltext"
+              />
+              <span>Fulltext</span>
+            </label>
+          </div>
+          <input
+            class="turath-homepage-search-input"
+            type="text"
+            name="q"
+            placeholder="Search بالعربي or in English"
+            aria-label="{{ _('Search') }}"
+          />
+        </form>
+      </div>
+
+      <nav class="turath-homepage-main-nav" aria-label="Collections">
+        <a class="turath-homepage-nav-link" href="#">Arabian Chronicles</a>
+        <a class="turath-homepage-nav-link" href="#">Newspapers and Magazines</a>
+        <a class="turath-homepage-nav-link" href="#">300 Years of Hajj</a>
+        <a class="turath-homepage-nav-link" href="#">Oral Histories from Arabia</a>
+      </nav>
+
+      <div class="turath-homepage-lang-footer">
+        <button class="turath-homepage-lang-btn" type="button">عربي</button>
+      </div>
+    </aside>
+
+    <main class="turath-homepage-main-content">
+      <div class="turath-homepage-carousel" aria-label="Homepage carousel">
+        <img
+          src="{{ url_for('static', filename='images/carousel-1.png') }}"
+          class="turath-homepage-carousel-img active"
+          alt="Slide 1"
+        />
+        <img
+          src="{{ url_for('static', filename='images/carousel-2.png') }}"
+          class="turath-homepage-carousel-img"
+          alt="Slide 2"
+        />
+        <img
+          src="{{ url_for('static', filename='images/carousel-3.png') }}"
+          class="turath-homepage-carousel-img"
+          alt="Slide 3"
+        />
+        <img
+          src="{{ url_for('static', filename='images/carousel-4.png') }}"
+          class="turath-homepage-carousel-img"
+          alt="Slide 4"
+        />
+      </div>
+
+      <div class="turath-homepage-metadata-badge">
+        <span class="turath-homepage-meta-en">Tārīkh Ibn 'Isā</span>
+        <span class="turath-homepage-meta-ar">تاريخ ابن عيسى</span>
+      </div>
+    </main>
+  </div>
+
+  <script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', function () {
+      const searchForm = document.querySelector('.turath-homepage-search-form');
+      const searchInput = searchForm
+        ? searchForm.querySelector('.turath-homepage-search-input')
+        : null;
+
+      function escapeLucenePhrase(value) {
+        return (value || '').replace(/\\/g, '\\\\').replace(/\"/g, '\\"');
+      }
+
+      function buildWildcardMetadataQuery(value) {
+        const trimmedValue = (value || '').trim();
+        if (!trimmedValue) {
+          return value;
+        }
+
+        if (
+          trimmedValue.includes(':') ||
+          trimmedValue.includes('"') ||
+          trimmedValue.includes('*') ||
+          trimmedValue.includes('?') ||
+          trimmedValue.includes('custom_fields.') ||
+          trimmedValue.includes('metadata.')
+        ) {
+          return value;
+        }
+
+        const tokens = trimmedValue.split(/\s+/).filter(Boolean);
+        const wrappedTokens = tokens.map(function (token) {
+          const escapedToken = escapeLucenePhrase(token);
+          return `*${escapedToken}*`;
+        });
+
+        return wrappedTokens.join(' ');
+      }
+
+      function buildFulltextQuery(value) {
+        const trimmedValue = (value || '').trim();
+        if (!trimmedValue) {
+          return value;
+        }
+
+        if (trimmedValue.includes('custom_fields.turath\\:fulltext:')) {
+          return value;
+        }
+
+        const escapedValue = escapeLucenePhrase(trimmedValue);
+        return `custom_fields.turath\\:fulltext:"${escapedValue}"`;
+      }
+
+      function getSearchMode() {
+        if (!searchForm) {
+          return 'metadata';
+        }
+
+        const checkedInput = searchForm.querySelector(
+          'input[name="turath_search_mode"]:checked'
+        );
+
+        if (!checkedInput) {
+          return 'metadata';
+        }
+
+        return checkedInput.value || 'metadata';
+      }
+
+      function buildFinalQuery(value) {
+        const searchMode = getSearchMode();
+        if (searchMode === 'fulltext') {
+          return buildFulltextQuery(value);
+        }
+
+        return buildWildcardMetadataQuery(value);
+      }
+
+      if (searchForm && searchInput) {
+        searchForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          const finalQuery = buildFinalQuery(searchInput.value);
+          const encodedQuery = encodeURIComponent(finalQuery || '');
+          window.location = `${searchForm.action}?q=${encodedQuery}`;
+        });
+      }
+
+      const images = document.querySelectorAll(
+        '.turath-homepage-carousel-img'
+      );
+
+      if (!images.length) {
+        return;
+      }
+
+      let currentIndex = 0;
+
+      function cycleImages() {
+        images[currentIndex].classList.remove('active');
+        currentIndex = (currentIndex + 1) % images.length;
+        images[currentIndex].classList.add('active');
+      }
+
+      window.setInterval(cycleImages, 5000);
+    });
+  </script>
+{%- endblock page_body %}

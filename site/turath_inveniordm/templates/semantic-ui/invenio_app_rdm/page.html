@@ -1,0 +1,19 @@
+{%- extends "invenio_theme/page.html" -%}
+
+{%- block body_inner %}
+
+  {%- block page_header %}
+    {% include config.THEME_HEADER_TEMPLATE %}
+  {%- endblock page_header %}
+
+  <main id="main">
+    <div class="invenio-page-body">
+      {%- block page_body %}
+        {% include "invenio_theme/body.html" %}
+      {%- endblock page_body %}
+    </div>
+  </main>
+
+  {%- block page_footer %}{%- endblock page_footer %}
+
+{%- endblock body_inner %}
