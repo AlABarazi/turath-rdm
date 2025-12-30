@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 
 import _isEmpty from "lodash/isEmpty";
 import PropTypes from "prop-types";
 import { withState } from "react-searchkit";
-import { Button, Dropdown, Icon, Label, Search } from "semantic-ui-react";
+import { Button, Icon, Label, Search } from "semantic-ui-react";
 
 import { i18next } from "@translations/invenio_app_rdm/i18next";
 
@@ -78,6 +78,9 @@ const TurathMultipleOptionsSearchBarCmp = (props) => {
   } = props;
 
   const [searchMode, setSearchMode] = useState("metadata");
+  const searchModeNameRef = useRef(
+    `turath-search-mode-${Math.random().toString(36).slice(2)}`
+  );
 
   const modeOptions = [
     { key: "metadata", text: "Metadata", value: "metadata" },
@@ -138,24 +141,30 @@ const TurathMultipleOptionsSearchBarCmp = (props) => {
     </Button>
   );
 
+  const searchModeOptions = (
+    <div className="turath-search-mode" role="group" aria-label="Search by">
+      <span className="turath-search-by-label">SEARCH BY:</span>
+      {modeOptions.map((option) => (
+        <label
+          key={option.key}
+          className="turath-search-mode-option"
+        >
+          <input
+            type="radio"
+            name={searchModeNameRef.current}
+            value={option.value}
+            checked={searchMode === option.value}
+            onChange={() => setSearchMode(option.value)}
+          />
+          <span>{option.text}</span>
+        </label>
+      ))}
+    </div>
+  );
+
   return (
-    <div
-      style={{
-        display: "flex",
-        width: "100%",
-        alignItems: "center",
-        overflow: "visible",
-      }}
-    >
-      <Dropdown
-        selection
-        compact
-        options={modeOptions}
-        value={searchMode}
-        onChange={(e, { value }) => setSearchMode(value)}
-        style={{ marginRight: "10px", minWidth: "140px", flexShrink: 0 }}
-      />
-      <div style={{ flex: 1 }}>
+    <div className="turath-searchbar-row">
+      <div className="turath-searchbar-input">
         <Search
           fluid
           aria-label={placeholder}
@@ -173,6 +182,7 @@ const TurathMultipleOptionsSearchBarCmp = (props) => {
           selectFirstResult
         />
       </div>
+      {searchModeOptions}
     </div>
   );
 };

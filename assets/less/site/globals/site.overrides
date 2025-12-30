@@ -1,3 +1,5 @@
+ @turath-left-column-width: 380px;
+
  .turath-branding {
    display: flex;
    align-items: center;
@@ -227,6 +229,164 @@
    font-weight: bold;
    display: block;
  }
+
+ .outer-navbar {
+   background-color: #e3e8e8 !important;
+   background-image: none !important;
+   border-bottom: 1px solid #aeb5b5;
+ }
+
+ .theme.header {
+   box-shadow: none;
+ }
+
+ .turath-header-grid {
+   display: grid;
+   grid-template-columns: @turath-left-column-width 1fr;
+   min-height: 90px;
+   width: 100%;
+ }
+
+ .turath-header-logo-area {
+   border-right: 1px solid #aeb5b5;
+   padding: 10px 20px;
+   background-color: #e3e8e8;
+   display: flex;
+   align-items: center;
+ }
+
+ .turath-header-search-area {
+   padding: 0 30px;
+   background-color: #e3e8e8;
+   display: flex;
+   align-items: center;
+ }
+
+ .turath-header-searchbar {
+   width: 100%;
+ }
+
+ .turath-header-search-area .ui.icon.input > input,
+ .turath-header-search-area input.prompt {
+   border: 1px solid #e06c55;
+   border-radius: 0;
+   background: transparent;
+   color: #e06c55;
+   padding: 10px 12px;
+ }
+
+ .turath-header-search-area .ui.icon.input > input::placeholder,
+ .turath-header-search-area input.prompt::placeholder {
+   color: #e06c55;
+   opacity: 0.8;
+ }
+
+ .turath-header-search-area .ui.button.search {
+   background: #e06c55;
+   color: #fff;
+ }
+
+ .turath-search-body,
+ .turath-search-body #main,
+ .turath-search-body .invenio-page-body {
+   background-color: #e3e8e8;
+ }
+
+ .turath-search-body .invenio-page-body {
+   padding: 0;
+ }
+
+ .turath-search-layout {
+   display: grid;
+   grid-template-columns: @turath-left-column-width 1fr;
+   min-height: calc(100vh - 90px);
+ }
+
+ .turath-search-sidebar {
+   background-color: #fff;
+   border-right: 1px solid #aeb5b5;
+   padding: 20px;
+   overflow-y: auto;
+   font-size: 0.8rem;
+ }
+
+ .turath-search-by-label {
+   font-weight: 700;
+   letter-spacing: 0.03em;
+   color: #777;
+   text-transform: uppercase;
+ }
+
+ .turath-search-main {
+   overflow-y: auto;
+ }
+
+ .turath-search-results-status {
+   padding: 20px 30px;
+   font-weight: bold;
+   font-size: 0.9rem;
+   border-bottom: 1px solid #aeb5b5;
+ }
+
+ .turath-search-results-list {
+   padding: 0;
+ }
+
+ .turath-search-body .result-options {
+   display: none;
+ }
+
+ .turath-searchbar-row {
+   display: flex;
+   align-items: center;
+   width: 100%;
+   gap: 12px;
+   overflow: visible;
+ }
+
+ .turath-searchbar-input {
+   flex: 1;
+   min-width: 240px;
+ }
+
+ .turath-search-mode {
+   display: flex;
+   gap: 10px;
+   flex-shrink: 0;
+   align-items: center;
+ }
+
+ .turath-search-mode-option {
+   cursor: pointer;
+   user-select: none;
+ }
+
+ .turath-search-mode-option input {
+   position: absolute;
+   opacity: 0;
+   pointer-events: none;
+ }
+
+ .turath-search-mode-option span {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   padding: 10px 12px;
+   border: 1px solid #e06c55;
+   font-size: 0.9rem;
+   font-weight: 600;
+   color: #e06c55;
+   background: transparent;
+   white-space: nowrap;
+ }
+
+ .turath-search-mode-option input:checked + span {
+   background: rgba(224, 108, 85, 0.10);
+ }
+
+ .turath-search-mode-option:focus-within span {
+   background: rgba(224, 108, 85, 0.10);
+ }
  
  @media (max-width: 768px) {
    .turath-branding {
@@ -262,5 +422,40 @@
 
    .turath-homepage-main-content {
      height: 500px;
+   }
+
+   .turath-header-grid {
+     grid-template-columns: 1fr;
+   }
+
+   .turath-header-logo-area {
+     border-right: none;
+   }
+
+   .turath-header-search-area {
+     padding: 0 20px 12px;
+   }
+
+   .turath-search-layout {
+     grid-template-columns: 1fr;
+     min-height: auto;
+   }
+
+   .turath-search-sidebar {
+     display: none;
+   }
+
+   .turath-searchbar-row {
+     flex-wrap: wrap;
+   }
+
+   .turath-searchbar-input {
+     min-width: 0;
+   }
+
+   .turath-search-mode {
+     width: 100%;
+     justify-content: flex-start;
+     padding-top: 6px;
    }
  }
