@@ -98,7 +98,10 @@ $invenioMenu.on("keydown", (event) => {
 });
 
 const mountHeaderSearchbar = () => {
-  if (document.getElementById("invenio-search-config")) {
+  const hasSearchApp =
+    Boolean(document.getElementById("invenio-search-config")) ||
+    Boolean(document.querySelector("[data-invenio-search-config]"));
+  if (hasSearchApp) {
     return;
   }
 

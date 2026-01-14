@@ -253,6 +253,31 @@
    background-color: #e3e8e8;
    display: flex;
    align-items: center;
+   overflow: hidden;
+ }
+
+ .turath-header-logo-area .turath-branding {
+   display: flex;
+   justify-content: flex-start;
+   gap: 10px;
+   width: 100%;
+   align-items: center;
+   flex-wrap: nowrap;
+   min-width: 0;
+   overflow: visible;
+ }
+
+ .turath-header-logo-area .turath-branding-tagline {
+   flex: 1 1 auto;
+   min-width: 0;
+   max-width: 200px;
+ }
+
+ .turath-header-logo-area .turath-branding-logo {
+   flex: 0 0 auto;
+   flex-shrink: 0;
+   max-width: 120px;
+   margin-left: auto;
  }
 
  .turath-header-search-area {
@@ -260,6 +285,8 @@
    background-color: #e3e8e8;
    display: flex;
    align-items: center;
+   position: relative;
+   z-index: 2;
  }
 
  .turath-header-searchbar {
@@ -303,11 +330,31 @@
  }
 
  .turath-search-sidebar {
-   background-color: #fff;
+   background-color: #e3e8e8;
    border-right: 1px solid #aeb5b5;
    padding: 20px;
    overflow-y: auto;
    font-size: 0.8rem;
+ }
+
+ .turath-search-sidebar .ui.segment,
+ .turath-search-sidebar .ui.segments,
+ .turath-search-sidebar .ui.card {
+   background: transparent;
+   box-shadow: none;
+ }
+
+ .turath-search-results-list .ui.segment,
+ .turath-search-results-list .ui.secondary.segment,
+ .turath-search-results-list .ui.placeholder.segment {
+   background: transparent;
+   box-shadow: none;
+   border: none;
+ }
+
+ .turath-search-results-list .ui.secondary.segment {
+   border-bottom: 1px solid #aeb5b5;
+   border-radius: 0;
  }
 
  .turath-search-by-label {

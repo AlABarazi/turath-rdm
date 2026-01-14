@@ -1,8 +1,9 @@
 import React, { useContext } from "react";
 
-import { withState } from "react-searchkit";
+import { buildUID, withState } from "react-searchkit";
 
 import {
+  SearchBar,
   SearchAppFacets,
   SearchAppResultsPane,
   SearchConfigurationContext,
@@ -17,6 +18,13 @@ export function TurathSearchAppLayout({ config }) {
 
   return (
     <div className="turath-search-page">
+      {appName ? (
+        <SearchBar
+          buildUID={buildUID}
+          appName={appName}
+          elementId="header-search-bar"
+        />
+      ) : null}
       <div className="turath-search-layout">
         {facetsAvailable && appName ? (
           <aside className="turath-search-sidebar" aria-label="Search filters">

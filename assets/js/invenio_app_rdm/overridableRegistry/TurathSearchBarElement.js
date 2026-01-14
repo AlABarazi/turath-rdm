@@ -1,26 +1,10 @@
 import React, { useRef, useState } from "react";
 
-import _isEmpty from "lodash/isEmpty";
 import PropTypes from "prop-types";
 import { withState } from "react-searchkit";
-import { Button, Icon, Label, Search } from "semantic-ui-react";
+import { Button, Icon } from "semantic-ui-react";
 
 import { i18next } from "@translations/invenio_app_rdm/i18next";
-
-const resultRenderer = ({ text }, queryString) => {
-  let searchOption = "...";
-
-  if (!_isEmpty(queryString)) {
-    searchOption = queryString;
-  }
-
-  return (
-    <div className="flex">
-      <div className="truncated pt-5">{searchOption}</div>
-      <Label className="right-floated">{text}</Label>
-    </div>
-  );
-};
 
 const escapeLucenePhrase = (value) => {
   return (value || "").replace(/\\/g, "\\\\").replace(/\"/g, "\\\"");
@@ -115,24 +99,24 @@ const TurathMultipleOptionsSearchBarCmp = (props) => {
     window.location = `${destinationUrl}?q=${encodedQuery}`;
   };
 
-  const handleOnSearchClick = (e, data) => {
-    const destinationUrl = getDestinationUrl(data?.result);
+  const handleOnSearchClick = () => {
+    const destinationUrl = getDestinationUrl();
     navigateOrSearch(destinationUrl);
   };
 
-  const handleOnResultSelect = (e, { result }) => {
-    const destinationUrl = getDestinationUrl(result);
-    navigateOrSearch(destinationUrl);
-  };
+  const handleOnKeyDown = (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
 
-  const handleOnSearchChange = (e, { value }) => {
-    onInputChange(value);
+    const destinationUrl = getDestinationUrl();
+    navigateOrSearch(destinationUrl);
   };
 
   const searchButton = (
     <Button
       icon
-      className="right-floated search"
+      className="search"
       onMouseDown={handleOnSearchClick}
       onClick={handleOnSearchClick}
       aria-label={i18next.t("Search")}
@@ -165,22 +149,17 @@ const TurathMultipleOptionsSearchBarCmp = (props) => {
   return (
     <div className="turath-searchbar-row">
       <div className="turath-searchbar-input">
-        <Search
-          fluid
-          aria-label={placeholder}
-          onResultSelect={handleOnResultSelect}
-          onSearchChange={handleOnSearchChange}
-          resultRenderer={(rendererProps) =>
-            resultRenderer(rendererProps, queryString)
-          }
-          results={options}
-          value={queryString}
-          placeholder={placeholder}
-          minCharacters={0}
-          icon={searchButton}
-          className="right-angle-search-content"
-          selectFirstResult
-        />
+        <div className="ui fluid action input turath-searchbar-input-control">
+          <input
+            className="prompt"
+            aria-label={placeholder}
+            placeholder={placeholder}
+            value={queryString}
+            onChange={(event) => onInputChange(event.target.value)}
+            onKeyDown={handleOnKeyDown}
+          />
+          {searchButton}
+        </div>
       </div>
       {searchModeOptions}
     </div>
