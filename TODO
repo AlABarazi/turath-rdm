@@ -1,3 +1,6 @@
+* when user click on record and if there is search term when user click on the record it ope in mirador and placed inside the search box of mirador
+* remove rounds from buttons
+* metadata and fulltext buttons fix: when user press enter metadata button got selected again
 * when user make full text search, search results should be displayed as pharases. This will require making customized react list item and link the relevant data stream with it
 * access pdfs and hocr files directly from S3 storage not from files system
 * Convert the pdfs into images for perfect hocr aliginment (future work)

@@ -1,10 +1,11 @@
  @turath-left-column-width: 380px;
+@turath-record-sidebar-width: 400px;
 
- .turath-branding {
-   display: flex;
-   align-items: center;
-   gap: 15px;
- }
+.turath-branding {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
  
  .turath-branding-tagline {
    max-height: 55px;
@@ -383,6 +384,130 @@
    display: none;
  }
 
+ .turath-record-body,
+ .turath-record-body #main,
+ .turath-record-body .invenio-page-body {
+   background-color: #e3e8e8;
+ }
+
+ .turath-record-body .invenio-page-body {
+   padding: 0;
+ }
+
+ .turath-record-layout {
+   display: grid;
+   grid-template-columns: 1fr @turath-record-sidebar-width;
+   min-height: calc(100vh - 90px);
+   border-top: 1px solid #aeb5b5;
+ }
+
+ .turath-record-viewer-column {
+   display: flex;
+   flex-direction: column;
+   border-right: 1px solid #aeb5b5;
+   overflow: hidden;
+ }
+
+ .turath-record-action-bar {
+   padding: 15px 30px;
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   border-bottom: 1px solid #aeb5b5;
+   background-color: #e3e8e8;
+   min-height: 80px;
+ }
+
+ .turath-record-file-info {
+   display: flex;
+   gap: 40px;
+ }
+
+ .turath-record-info-item h4 {
+   font-size: 0.65rem;
+   font-weight: 700;
+   text-transform: uppercase;
+   color: #1a1a1a;
+   margin-bottom: 4px;
+ }
+
+ .turath-record-info-item span {
+   font-size: 0.95rem;
+   font-weight: 600;
+ }
+
+ .turath-record-action-buttons {
+   display: flex;
+   gap: 10px;
+ }
+
+ .turath-record-download {
+   background: transparent !important;
+   border: 1px solid #7f8c8d !important;
+   border-radius: 0 !important;
+   color: #1a1a1a !important;
+   font-weight: 500;
+ }
+
+ .turath-record-download:hover {
+   background-color: #d0d5d5 !important;
+ }
+
+ .turath-record-viewer-container {
+   flex-grow: 1;
+   background-color: #dce1e1;
+   padding: 20px;
+   display: flex;
+   overflow: auto;
+ }
+
+ .turath-record-viewer-container .preview-iframe {
+   width: 100%;
+   height: 100%;
+   min-height: 520px;
+   border: 0;
+ }
+
+ .turath-record-metadata-sidebar {
+   padding: 30px;
+   overflow-y: auto;
+   background-color: #e3e8e8;
+ }
+
+ .turath-record-metadata-section {
+   padding-bottom: 22px;
+   margin-bottom: 22px;
+   border-bottom: 1px solid #aeb5b5;
+ }
+
+ .turath-record-metadata-section:last-child {
+   padding-bottom: 0;
+   margin-bottom: 0;
+   border-bottom: none;
+ }
+
+ .turath-record-metadata-section-title {
+   margin: 0 0 14px;
+   font-size: 1.05rem;
+   font-weight: 700;
+ }
+
+ .turath-record-metadata-sidebar .details-list {
+   margin: 0;
+ }
+
+ .turath-record-metadata-sidebar .ui.message {
+   background: transparent;
+   box-shadow: none;
+ }
+
+ .turath-record-metadata-sidebar .ui.segment,
+ .turath-record-metadata-sidebar .ui.segments,
+ .turath-record-metadata-sidebar .ui.card {
+   background: transparent;
+   box-shadow: none;
+ }
+
  .turath-searchbar-row {
    display: flex;
    align-items: center;
@@ -486,6 +611,16 @@
    .turath-search-layout {
      grid-template-columns: 1fr;
      min-height: auto;
+   }
+
+   .turath-record-layout {
+     grid-template-columns: 1fr;
+     min-height: auto;
+   }
+
+   .turath-record-viewer-column {
+     border-right: none;
+     border-bottom: 1px solid #aeb5b5;
    }
 
    .turath-search-sidebar {

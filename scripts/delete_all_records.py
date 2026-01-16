@@ -1,55 +1,161 @@
-import requests
+import argparse
 import os
-import sys
+import shutil
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional
+
+import requests
 
 requests.packages.urllib3.disable_warnings()
 
-TOKEN = os.getenv("RDM_API_TOKEN")
-BASE_URL = "https://127.0.0.1:5000"
 
-if not TOKEN:
-    print("Error: RDM_API_TOKEN not set")
-    sys.exit(1)
+def load_token() -> str:
+    token = os.getenv("RDM_API_TOKEN")
+    if not token:
+        raise RuntimeError("RDM_API_TOKEN not set")
+    return token
 
-def h_auth():
-    return {"Authorization": f"Bearer {TOKEN}"}
 
-def get_all_records():
-    # Fetch all published records
-    url = f"{BASE_URL}/api/records?size=1000&sort=newest&allversions=true"
-    try:
-        r = requests.get(url, headers=h_auth(), verify=False)
-        if not r.ok:
-            print(f"Failed to list records: {r.status_code} {r.text}")
-            return []
-        return r.json()['hits']['hits']
-    except Exception as e:
-        print(f"Connection failed: {e}")
-        return []
+def get_auth_headers(token: str) -> Dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
-def delete_record(rec_id):
-    print(f"Deleting {rec_id}...")
-    url = f"{BASE_URL}/api/records/{rec_id}"
-    r = requests.delete(url, headers=h_auth(), verify=False)
-    if r.status_code == 204:
-        print("  Deleted (204).")
-    elif r.status_code == 403:
-        print("  Forbidden (403). Cannot delete published record via API without admin/config?")
-    else:
-        print(f"  Failed: {r.status_code} {r.text}")
 
-def main():
-    print("Fetching records...")
-    records = get_all_records()
-    print(f"Found {len(records)} records.")
-    
-    if not records:
-        print("No records to delete.")
+def get_json_headers(token: str) -> Dict[str, str]:
+    return {
+        **get_auth_headers(token),
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+
+def iter_records(base_url: str, token: str, page_size: int) -> Iterable[dict]:
+    url: Optional[str] = (
+        f"{base_url}/api/records?size={page_size}&sort=newest&allversions=true"
+    )
+    while url:
+        response = requests.get(url, headers=get_auth_headers(token), verify=False)
+        if not response.ok:
+            raise RuntimeError(
+                f"Failed to list records: {response.status_code} {response.text}"
+            )
+        payload = response.json()
+        for hit in payload.get("hits", {}).get("hits", []):
+            yield hit
+        url = payload.get("links", {}).get("next")
+
+
+def delete_record_via_api(base_url: str, token: str, record_id: str) -> bool:
+    response = requests.delete(
+        f"{base_url}/api/records/{record_id}",
+        headers=get_auth_headers(token),
+        verify=False,
+    )
+    if response.status_code in {200, 202, 204}:
+        return True
+    if response.status_code in {404, 410}:
+        return True
+    if response.status_code in {403, 405, 409, 412}:
+        get_response = requests.get(
+            f"{base_url}/api/records/{record_id}",
+            headers=get_auth_headers(token),
+            verify=False,
+        )
+        if get_response.status_code in {404, 410}:
+            return True
+        if not get_response.ok:
+            return False
+
+        etag = get_response.headers.get("ETag")
+        delete_url = (
+            get_response.json().get("links", {}).get("delete")
+            or f"{base_url}/api/records/{record_id}/delete"
+        )
+        headers = get_json_headers(token)
+        if etag:
+            headers = {**headers, "If-Match": etag}
+        response = requests.delete(
+            delete_url,
+            headers=headers,
+            json={},
+            verify=False,
+        )
+        return response.status_code in {200, 202, 204, 404, 410}
+    return False
+
+
+def delete_local_record_cache(record_id: str, cantaloupe_root: Path, hocr_root: Path) -> None:
+    cantaloupe_dir = cantaloupe_root / record_id
+    if cantaloupe_dir.exists():
+        shutil.rmtree(cantaloupe_dir)
+
+    hocr_record_dir = hocr_root / record_id
+    if hocr_record_dir.exists():
+        shutil.rmtree(hocr_record_dir)
+
+
+def delete_all_subdirectories(root_dir: Path) -> None:
+    if not root_dir.exists():
         return
+    for child in root_dir.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
 
-    print("Starting deletion...")
-    for rec in records:
-        delete_record(rec['id'])
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", default="https://127.0.0.1:5000")
+    parser.add_argument("--page-size", type=int, default=100)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--yes", action="store_true")
+    args = parser.parse_args()
+
+    token = load_token()
+    repo_root = Path(__file__).resolve().parents[1]
+    cantaloupe_root = repo_root / "cantaloupe-files"
+    hocr_root = repo_root / "hocr_mount" / "books"
+
+    record_ids: List[str] = [
+        r["id"] for r in iter_records(args.base_url, token, args.page_size)
+    ]
+    print(f"Found {len(record_ids)} records.")
+
+    if not record_ids:
+        print("No records to delete.")
+        return 0
+
+    print(f"Cantaloupe cleanup root: {cantaloupe_root}")
+    print(f"HOCR cleanup root: {hocr_root}")
+
+    if args.dry_run:
+        for record_id in record_ids:
+            print(f"[dry-run] Would delete record {record_id}")
+            print(
+                f"[dry-run] Would delete {cantaloupe_root / record_id} (if exists)"
+            )
+            print(f"[dry-run] Would delete {hocr_root / record_id} (if exists)")
+        return 0
+
+    if not args.yes:
+        print("Refusing to delete records without --yes.")
+        return 2
+
+    deleted_count = 0
+    for record_id in record_ids:
+        print(f"Deleting record {record_id}...")
+        deleted = delete_record_via_api(args.base_url, token, record_id)
+        if not deleted:
+            print(f"  Failed to delete record {record_id}")
+            continue
+        deleted_count += 1
+        delete_local_record_cache(record_id, cantaloupe_root, hocr_root)
+        print("  Deleted + cleaned local cache")
+
+    delete_all_subdirectories(cantaloupe_root)
+    delete_all_subdirectories(hocr_root)
+
+    print(f"Deleted {deleted_count}/{len(record_ids)} records.")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
