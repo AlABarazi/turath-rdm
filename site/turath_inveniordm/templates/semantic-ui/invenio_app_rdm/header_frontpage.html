@@ -1,0 +1,146 @@
+{# -*- coding: utf-8 -*-
+    Copyright (C) 2020 CERN.
+    Copyright (C) 2020 Northwestern University.
+    Copyright (C) 2021 New York University.
+
+    Invenio App RDM is free software; you can redistribute it and/or modify it
+    under the terms of the MIT License; see LICENSE file for more details.
+#}
+
+{%- extends config.THEME_HEADER_TEMPLATE %}
+
+{#- Remove search field from top bar on frontpage #}
+{%- block navbar_search %}{% endblock %}
+
+{%- block brand %}
+  <a class="logo-link turath-home-branding" href="/">
+    <img
+      class="ui image turath-home-branding-logo"
+      src="{{ url_for('static', filename='images/Turath Logo with Tagline for Homepage.png') }}"
+      alt="{{ _('Turath') }}"
+    />
+  </a>
+{%- endblock brand %}
+
+{%- block navbar %}
+{{ super() }}
+
+{%- block frontpage_search %}
+<div id="frontpage-search-bar" class="ui container fluid frontpage-header">
+  <div class="ui container grid rel-mt-2">
+    <div class="row">
+      <div class="sixteen wide column center aligned">
+        {%- block frontpage_title %}
+        <h1 class="ui center aligned header inverted">
+          {{ _(config.THEME_FRONTPAGE_TITLE) }}
+        </h1>
+        {%- endblock frontpage_title %}
+      </div>
+    </div>
+      {%- block frontpage_form %}
+      <div class="row">
+          <div class="sixteen wide mobile four wide computer column"></div>
+          <div class="sixteen wide mobile eight wide computer column center aligned">
+            
+            {# MODIFICATION START: Added search type radio buttons #}
+            <div class="ui segment basic compact" style="margin-bottom: 10px; padding: 0;">
+              <div class="ui form">
+                <div class="inline fields" style="margin-bottom: 0;">
+                  <label for="searchType" style="color: white; margin-right:10px;">Search Mode:</label>
+                  <div class="field">
+                    <div class="ui radio checkbox">
+                      <input type="radio" name="searchTypeHomepage" value="metadata" checked="checked" id="searchTypeMetadataHomepage">
+                      <label style="color: white;" for="searchTypeMetadataHomepage">{{ _('Metadata') }}</label>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <div class="ui radio checkbox">
+                      <input type="radio" name="searchTypeHomepage" value="fulltext" id="searchTypeFulltextHomepage">
+                      <label style="color: white;" for="searchTypeFulltextHomepage">{{ _('Full Text') }}</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {# MODIFICATION END #}
+
+            <form action="{{ url_for('invenio_search_ui.search') }}" class="ui form" role="search" id="homepage-search-form">
+              <div class="ui fluid big action input">
+                <input type="text" name="q" class="form-control" aria-label="{{ _('Search') }}" placeholder="{{ _('Search') }}">
+                <button type="submit" class="ui icon search button" aria-label="{{ _('Search') }}">
+                  <i class="search icon"></i>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="ui divider hidden"></div>
+        {%- endblock frontpage_form %}
+  </div>
+</div>
+
+<script type="text/javascript">
+ document.addEventListener('DOMContentLoaded', function () {
+  const searchForm = document.getElementById('homepage-search-form');
+  if (searchForm) {
+    searchForm.addEventListener('submit', function (event) {
+      const selectedSearchType = document.querySelector('input[name="searchTypeHomepage"]:checked');
+      const searchInput = searchForm.querySelector('input[name="q"]');
+      const originalQuery = searchInput.value;
+
+      const escapeLucenePhrase = (value) => {
+        return (value || "")
+          .replace(/\\/g, "\\\\")
+          .replace(/\"/g, "\\\"");
+      };
+
+      const buildWildcardMetadataQuery = (value) => {
+        const trimmedValue = (value || "").trim();
+        if (!trimmedValue) {
+          return value;
+        }
+
+        if (
+          trimmedValue.includes(":") ||
+          trimmedValue.includes('"') ||
+          trimmedValue.includes("*") ||
+          trimmedValue.includes("?") ||
+          trimmedValue.includes("custom_fields.") ||
+          trimmedValue.includes("metadata.")
+        ) {
+          return value;
+        }
+
+        const tokens = trimmedValue.split(/\s+/).filter(Boolean);
+        const wrappedTokens = tokens.map((token) => {
+          const escapedToken = escapeLucenePhrase(token);
+          return `*${escapedToken}*`;
+        });
+        return wrappedTokens.join(" ");
+      };
+
+      if (selectedSearchType && selectedSearchType.value === 'fulltext') {
+        // If Full Text is selected, prefix the query before submitting
+        // But we don't want to change the visual input if possible, 
+        // however for a simple form submit, modifying the value is the easiest way to send the right param.
+        if (
+          originalQuery.trim() !== '' &&
+          !originalQuery.includes('custom_fields.turath\\:fulltext:')
+        ) {
+          const escapedQuery = escapeLucenePhrase(originalQuery.trim());
+          searchInput.value = `custom_fields.turath\\:fulltext:"${escapedQuery}"`;
+        }
+      }
+
+      if (selectedSearchType && selectedSearchType.value === 'metadata') {
+        searchInput.value = buildWildcardMetadataQuery(originalQuery);
+      }
+      // Form submits normally to /search with the (potentially modified) q parameter
+    });
+  }
+});
+</script>
+
+{%- endblock frontpage_search %}
+
+{% endblock %}

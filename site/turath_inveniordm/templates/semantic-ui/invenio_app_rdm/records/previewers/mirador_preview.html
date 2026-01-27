@@ -1,0 +1,26 @@
+{% extends config.PREVIEWER_ABSTRACT_TEMPLATE %}
+
+{# Mirador preview template - renders a container and optionally initializes Mirador if assets are present #}
+
+{% block panel %}
+<div class="ui segment" id="mirador-container">
+  <div
+    id="mirador-viewer"
+    data-manifest-url="{{ manifest_url }}"
+    data-mirador-config='{{ mirador_config | tojson }}'
+    style="min-height: 520px;"
+  ></div>
+  <noscript>Mirador requires JavaScript to be enabled.</noscript>
+</div>
+{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('turath_inveniordm.static', filename='mirador/mirador.min.css') }}" />
+{% endblock %}
+
+{% block javascript %}
+{{ super() }}
+<script src="{{ url_for('turath_inveniordm.static', filename='mirador/mirador.min.js') }}"></script>
+{{ webpack['turath-mirador-init.js'] }}
+{% endblock %}

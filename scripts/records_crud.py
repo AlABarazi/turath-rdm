@@ -36,6 +36,7 @@ import argparse
 import hashlib
 import os
 import sys
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -88,20 +89,147 @@ def api_put_bytes(url: str, token: str, data: bytes, content_type: str = "applic
     return requests.put(url, headers=headers, data=data, verify=False)
 
 
+# ---------- dummy custom fields for local experimentation ----------
+
+
+def build_dummy_custom_fields(book_id: str) -> Dict[str, object]:
+    """Build a dummy custom_fields payload for turath:* fields.
+
+    This is intended for local testing of the upload pipeline with the
+    Turath custom fields. It uses simple, obviously fake values and
+    only relies on vocabulary IDs that are expected to exist in a
+    standard InvenioRDM setup (e.g., languages, licenses, resource
+    types). For project-specific vocabularies like creators or places,
+    we keep the payload minimal to avoid hard dependency on local
+    fixture content.
+    """
+
+    return {
+        # 1. Title
+        "turath:title": f"Dummy title for {book_id}",
+        # 2. Alternative titles (multi-value)
+        "turath:alternative_title": [
+            f"Alternative transliterated title for {book_id}",
+            "عنوان بديل تجريبي ١",
+        ],
+        # 3. Publisher (multi-value keyword)
+        "turath:publisher": [
+            "Dummy Publisher A",
+            "Dummy Publisher B",
+        ],
+        # 6-7. Date and Date-Issued
+        "turath:date": "2024-01-15",
+        "turath:date_issued": "2024-02-01",
+        # 9. Description (multi-value)
+        "turath:description": [
+            "Short English description for testing custom fields.",
+            "وصف عربي تجريبي لحقل الوصف.",
+        ],
+        # 10. Type (resource_type) – align with core metadata where possible
+        "turath:resource_type": {
+            "id": "publication-book",
+        },
+        # 11. Format (multi-value vocab) – keep generic example IDs, safe to adjust
+        # in real data by looking up /api/vocabularies/formats.
+        # Here we only show structure; IDs may need to be updated in practice.
+        # "turath:format": [
+        #     {"id": "text"},
+        #     {"id": "application-pdf"},
+        # ],
+        # 11. Extent
+        "turath:format_extent": "300 pages; 25 cm",
+        # 12. Identifier (multi-value)
+        "turath:identifier": [
+            f"{book_id}.pdf",
+            f"https://example.org/books/{book_id}",
+        ],
+        # 13. Source (multi-value)
+        "turath:source": [
+            "Example Collection, Box 1, Folder 2",
+            "Donated by Example Family, 2020",
+        ],
+        # 14. Language (multi-value vocab) – use standard ISO 639-2 codes
+        "turath:language": [
+            {"id": "ara"},
+            {"id": "eng"},
+        ],
+        # 15. Coverage-Temporal
+        "turath:coverage_temporal_start": "1900-01-01",
+        "turath:coverage_temporal_end": "1950-12-31",
+        # 17. Relation
+        "turath:relation_identifier": f"REL-{book_id}",
+        "turath:bibliographic_citation": [
+            "Dummy Author. Dummy Title. Dummy Place: Dummy Publisher, 2024.",
+            "مؤلف تجريبي. عنوان تجريبي. مكان تجريبي: ناشر تجريبي، ٢٠٢٤.",
+        ],
+        # 18. Rights – use an existing license ID from vocabularies/licenses
+        "turath:rights": {
+            "id": "cc-by-4.0",
+        },
+        "turath:rights_uri": "https://creativecommons.org/licenses/by/4.0/",
+        "turath:rights_identifier": "CC-BY-4.0",
+    }
+
+
+def load_custom_fields_from_metadata(book_dir: Path) -> Optional[Dict[str, object]]:
+    """
+    Load custom_fields from metadata.json in book directory.
+    
+    Returns None if metadata.json doesn't exist or can't be loaded.
+    """
+    import json
+    
+    metadata_file = book_dir / "metadata.json"
+    if not metadata_file.exists():
+        return None
+    
+    try:
+        with open(metadata_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        custom_fields = data.get("custom_fields", {})
+        if not custom_fields:
+            print(f"⚠️  Warning: metadata.json exists but has no custom_fields", file=sys.stderr)
+            return None
+        
+        print(f"✓ Loaded {len(custom_fields)} custom fields from metadata.json")
+        return custom_fields
+    
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to load metadata.json: {e}", file=sys.stderr)
+        return None
+
+
 # ---------- CRUD minimal ----------
 
-def create_draft(base_url: str, token: str, title: str, resource_type_id: str = "publication-book") -> dict:
+def create_draft(
+    base_url: str,
+    token: str,
+    title: str,
+    resource_type_id: str = "publication-book",
+    custom_fields: Optional[Dict[str, object]] = None,
+) -> dict:
     url = f"{base_url}/api/records"
     payload = {
         "metadata": {
             "title": title,
             "resource_type": {"id": resource_type_id},
-            "creators": [{"person_or_org": {"type": "personal", "family_name": "Uploader", "given_name": "Turath"}}],
+            "creators": [
+                {
+                    "person_or_org": {
+                        "type": "personal",
+                        "family_name": "Uploader",
+                        "given_name": "Turath",
+                    }
+                }
+            ],
             "publication_date": "2025-01-01",
         },
         "access": {"record": "public", "files": "public"},
         "files": {"enabled": True},
     }
+    if custom_fields:
+        payload["custom_fields"] = custom_fields
     r = api_post(url, token, payload)
     if not r.ok:
         raise RuntimeError(f"Create draft failed: {r.status_code} {r.text}")
@@ -123,17 +251,49 @@ def init_files(base_url: str, token: str, record_id: str, keys: List[str]) -> di
     return r.json()
 
 
-def upload_and_commit(base_url: str, token: str, record_id: str, key: str, file_path: Path) -> None:
+def upload_and_commit(
+    base_url: str,
+    token: str,
+    record_id: str,
+    key: str,
+    file_path: Path,
+    content_type: str = "application/octet-stream",
+) -> None:
+    import time
     content_url = f"{base_url}/api/records/{record_id}/draft/files/{key}/content"
     commit_url = f"{base_url}/api/records/{record_id}/draft/files/{key}/commit"
     with open(file_path, "rb") as f:
         data = f.read()
-    r_put = api_put_bytes(content_url, token, data)
-    if not r_put.ok:
-        raise RuntimeError(f"Upload failed for {key}: {r_put.status_code} {r_put.text}")
-    r_commit = api_post_empty(commit_url, token)
-    if not r_commit.ok:
-        raise RuntimeError(f"Commit failed for {key}: {r_commit.status_code} {r_commit.text}")
+    
+    # Retry params
+    retries = 5
+    delay = 2.0
+
+    # 1. Upload content
+    for attempt in range(retries):
+        r_put = api_put_bytes(content_url, token, data, content_type=content_type)
+        if r_put.status_code == 429:
+            if attempt < retries - 1:
+                wait = delay * (2 ** attempt)
+                print(f"⚠️  429 Rate Limit for {key} (upload). Retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+                continue
+        if not r_put.ok:
+            raise RuntimeError(f"Upload failed for {key}: {r_put.status_code} {r_put.text}")
+        break
+
+    # 2. Commit
+    for attempt in range(retries):
+        r_commit = api_post_empty(commit_url, token)
+        if r_commit.status_code == 429:
+            if attempt < retries - 1:
+                wait = delay * (2 ** attempt)
+                print(f"⚠️  429 Rate Limit for {key} (commit). Retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+                continue
+        if not r_commit.ok:
+            raise RuntimeError(f"Commit failed for {key}: {r_commit.status_code} {r_commit.text}")
+        break
 
 
 def publish(base_url: str, token: str, record_id: str) -> dict:
@@ -235,6 +395,55 @@ def s3_client_from_env():
     )
 
 
+def ensure_fulltext_indexing(record_id: str):
+    """
+    Explicitly trigger HOCR sync and fulltext indexing for a record.
+    This runs via Invenio application context (server-side logic),
+    ensuring robust indexing even if HTTP signals were missed.
+    """
+    print(f"\n[Indexer] Ensuring fulltext indexing for {record_id}...")
+    try:
+        from invenio_app.factory import create_app
+        from invenio_pidstore.models import PersistentIdentifier
+        from invenio_rdm_records.records.api import RDMRecord
+        from invenio_rdm_records.proxies import current_rdm_records_service
+        from turath_inveniordm.signals import sync_hocr_to_filesystem
+        from turath_inveniordm.fulltext import extract_hocr_text
+        
+        app = create_app()
+        with app.app_context():
+            # Resolve PID
+            pid = PersistentIdentifier.get('recid', record_id)
+            record = RDMRecord.get_record(pid.object_uuid)
+            
+            # 1. Sync Files
+            print(f"[Indexer] Syncing HOCR files to disk...")
+            count = sync_hocr_to_filesystem(record)
+            print(f"[Indexer] Synced {count} files.")
+            
+            # 2. Extract Text
+            print(f"[Indexer] Extracting text...")
+            text = extract_hocr_text(record_id)
+            if text:
+                print(f"[Indexer] Extracted {len(text)} characters.")
+                # 3. Update Record
+                record.setdefault('custom_fields', {})['turath:fulltext'] = text
+                record.commit()
+                # 4. Index
+                print(f"[Indexer] Re-indexing record...")
+                current_rdm_records_service.indexer.index(record)
+                print(f"[Indexer] ✅ Success.")
+            else:
+                print(f"[Indexer] ⚠️ No text extracted (no HOCR?).")
+                
+    except ImportError:
+        print("[Indexer] ⚠️ Invenio packages not found. Skipping server-side indexing. Ensure you run with 'pipenv run'.")
+    except Exception as e:
+        print(f"[Indexer] ❌ Failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def mirror_pdf_to_cantaloupe(pdf_path: Path, book_id: str) -> Optional[Tuple[str, str]]:
     bucket = os.getenv("CANTALOUPE_S3_BUCKET")
     if not bucket:
@@ -250,6 +459,122 @@ def mirror_pdf_to_cantaloupe(pdf_path: Path, book_id: str) -> Optional[Tuple[str
     # Verify existence
     s3.head_object(Bucket=bucket, Key=key)
     return bucket, key
+
+
+def get_hocr_dims(hocr_path: Path) -> Optional[Tuple[int, int]]:
+    """Extract page dimensions (width, height) from HOCR title attribute."""
+    try:
+        content = hocr_path.read_text(encoding='utf-8', errors='ignore')
+        # Look for ocr_page ... bbox 0 0 1380 2058
+        # Pattern: class=['"]ocr_page['"]...bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)
+        import re
+        m = re.search(r'class=[\'"]ocr_page[\'"].*?bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)', content, re.DOTALL)
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            return (x2 - x1), (y2 - y1)
+    except Exception:
+        pass
+    return None
+
+
+def mirror_pdf_to_local_disk(pdf_path: Path, record_id: str, pdf_key: str, book_dir: Path = None) -> None:
+    """Mirror PDF to local shared volume for FilesystemSource and cache dimensions (preferring HOCR)."""
+    # Base dir is ./cantaloupe-files (mounted to /opt/cantaloupe/images in docker)
+    base_dir = Path("cantaloupe-files")
+    base_dir.mkdir(exist_ok=True)
+    
+    target_dir = base_dir / record_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    target_file = target_dir / pdf_key
+    print(f"[mirror] Copying PDF to local disk: {target_file}...")
+    shutil.copy(pdf_path, target_file)
+
+    # Extract dimensions for IIIF manifest
+    try:
+        import json
+        from pypdf import PdfReader
+        
+        print(f"[mirror] Extracting dimensions from {pdf_path}...")
+        reader = PdfReader(pdf_path)
+        dims = []
+        hocr_count = 0
+        
+        for i, page in enumerate(reader.pages):
+            # 1. Default: Extract width/height from PDF (points)
+            # Assuming Cantaloupe renders 1pt = 1px by default, OR Mirador scales image to canvas.
+            w = int(float(page.mediabox.width))
+            h = int(float(page.mediabox.height))
+            
+            # 2. Override: Check HOCR for exact pixel dimensions (Crucial for annotation alignment)
+            if book_dir:
+                hocr_name = f"{i+1:03d}.hocr"
+                hocr_file = book_dir / hocr_name
+                if not hocr_file.exists():
+                    hocr_file = book_dir / "hocr" / hocr_name
+                
+                if hocr_file.exists():
+                    hocr_dim = get_hocr_dims(hocr_file)
+                    if hocr_dim:
+                        w, h = hocr_dim
+                        hocr_count += 1
+
+            dims.append({"w": w, "h": h})
+            
+        dims_file = target_dir / "dimensions.json"
+        with open(dims_file, "w") as f:
+            json.dump(dims, f)
+        
+        msg = f"[mirror] Saved dimensions for {len(dims)} pages to {dims_file}"
+        if hocr_count > 0:
+            msg += f" ({hocr_count} from HOCR)"
+        print(msg)
+            
+    except Exception as e:
+        print(f"[mirror] Failed to extract dimensions (skipping): {e}")
+
+
+def find_thumbnail(book_dir: Path) -> Optional[Path]:
+    """Find a thumbnail image in a processed book folder.
+
+    The expected inputs are generated by the book processing pipeline and may
+    include one of:
+    - thumbnail.jpg
+    - thumbnail.jpeg
+    - thumbnail.png
+
+    Args:
+        book_dir: Folder containing the processed book assets.
+
+    Returns:
+        Path to the thumbnail file if found, else None.
+    """
+    for name in ["thumbnail.jpg", "thumbnail.jpeg", "thumbnail.png"]:
+        candidate = book_dir / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def get_thumbnail_upload_plan(thumbnail_path: Path) -> Tuple[str, str]:
+    """Return the record filename and Content-Type to use for a thumbnail.
+
+    We normalize jpeg thumbnails to the canonical key "thumbnail.jpg" so the
+    frontend can have a stable preference order.
+
+    The InvenioRDM files content upload endpoint expects
+    Content-Type: application/octet-stream.
+
+    Args:
+        thumbnail_path: Path to the local thumbnail file.
+
+    Returns:
+        Tuple of (record_file_key, content_type).
+    """
+    suffix = thumbnail_path.suffix.lower()
+    if suffix == ".png":
+        return "thumbnail.png", "application/octet-stream"
+    return "thumbnail.jpg", "application/octet-stream"
 
 
 # ---------- commands ----------
@@ -273,44 +598,70 @@ def cmd_ingest_book(args):
             raise FileNotFoundError(f"No PDF found in {book_dir}")
         pdf = cands[0]
 
-    # HOCR (optional, pick first or 001.hocr). Support 'hocr/' subfolder.
-    hocr = None
+    # HOCR (optional): gather ALL *.hocr files from root and optional 'hocr/' subfolder
+    hocr_files = []
     if args.include_hocr:
-        # Preferred exact filename at root
-        pref = book_dir / "001.hocr"
-        # Alternate preferred path inside 'hocr/' subdir
-        pref_sub = book_dir / "hocr" / "001.hocr"
-        if pref.exists():
-            hocr = pref
-        elif pref_sub.exists():
-            hocr = pref_sub
-        else:
-            # Gather candidates from root and 'hocr/'
-            cands = []
-            cands.extend(sorted(book_dir.glob("*.hocr")))
-            hocr_dir = book_dir / "hocr"
-            if hocr_dir.exists():
-                cands.extend(sorted(hocr_dir.glob("*.hocr")))
-            hocr = cands[0] if cands else None
+        # Collect from root
+        hocr_files.extend(sorted(book_dir.glob("*.hocr")))
+        # Collect from 'hocr' subdirectory if present
+        hocr_dir = book_dir / "hocr"
+        if hocr_dir.exists():
+            hocr_files.extend(sorted(hocr_dir.glob("*.hocr")))
 
-    # Create draft
+    thumbnail_path = find_thumbnail(book_dir)
+    thumbnail_key = None
+    thumbnail_content_type = None
+    if thumbnail_path:
+        thumbnail_key, thumbnail_content_type = get_thumbnail_upload_plan(
+            thumbnail_path
+        )
+
+    # Try to load custom fields from metadata.json, fallback to dummy
+    print(f"\n{'='*60}")
+    print(f"Loading metadata for: {args.book_id}")
+    print(f"{'='*60}")
+    
+    custom_fields = load_custom_fields_from_metadata(book_dir)
+    
+    if custom_fields:
+        print(f"✓ Using custom fields from metadata.json")
+        # Extract title from custom fields if available
+        title = custom_fields.get("turath:title", args.book_id)
+    else:
+        print(f"⚠️  No metadata.json found, using dummy custom fields")
+        custom_fields = build_dummy_custom_fields(args.book_id)
+        title = args.book_id
+    
+    print(f"\nCreating draft record...")
     draft = create_draft(
         args.base_url,
         token,
-        title=args.book_id,
+        title=title,
         resource_type_id=getattr(args, "resource_type", "publication-book"),
+        custom_fields=custom_fields,
     )
     record_id = draft.get("id")
     print({"record_id": record_id})
 
-    # Init files
-    keys = [pdf.name] + ([hocr.name] if hocr else [])
+    # Init files (PDF + all HOCRs if requested)
+    keys = [pdf.name] + [p.name for p in hocr_files]
+    if thumbnail_key:
+        keys.append(thumbnail_key)
     init_files(args.base_url, token, record_id, keys)
 
     # Upload + commit
     upload_and_commit(args.base_url, token, record_id, pdf.name, pdf)
-    if hocr:
-        upload_and_commit(args.base_url, token, record_id, hocr.name, hocr)
+    for hocr_path in hocr_files:
+        upload_and_commit(args.base_url, token, record_id, hocr_path.name, hocr_path)
+    if thumbnail_key and thumbnail_path and thumbnail_content_type:
+        upload_and_commit(
+            args.base_url,
+            token,
+            record_id,
+            thumbnail_key,
+            thumbnail_path,
+            content_type=thumbnail_content_type,
+        )
 
     # Publish
     published = publish(args.base_url, token, record_id)
@@ -332,8 +683,17 @@ def cmd_ingest_book(args):
         iiif_full = f"{iiif_base}/iiif/2/{key}/full/full/0/default.jpg?page=1"
         print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
 
+    # Mirror to local disk (FilesystemSource)
+    mirror_pdf_to_local_disk(pdf, record_id, pdf.name, book_dir=book_dir)
+
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
+    
+    # Ensure fulltext indexing (server-side logic)
+    ensure_fulltext_indexing(record_id)
+    
+    # Return record_id for use by calling scripts
+    return record_id
 
 
 def cmd_get(args):

@@ -7,8 +7,13 @@
 			"path": "../../../Library/CloudStorage/GoogleDrive-alaabarazi@gmail.com/My Drive/Coding/resources"
 		},
 		{
-			"path": "../../inveniordm-terraform"
+			"path": "../chronicals"
+		},
+		{
+			"path": "../inveniordm-terraform-feature-deployment-scripts-and-docs"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "chronicals"
+	}
 }

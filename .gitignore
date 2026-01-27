@@ -85,10 +85,26 @@ logs/
 data/default/*
 data/.minio.sys
 
+# InvenioRDM file storage
+data/turath-files/
+
+services/search_service/certs/
+
+broken_service.json
+working_service.json
+
+scripts/records_crud copy.py
+scripts/feature-iiif-viewer-performance/batch_upload_results.json
+
 
 # Celery
 celerybeat-schedule
+celerybeat-schedule.db
 
+# Data mounts
+hocr_mount/
+cantaloupe-cache/
+app_data/back/
 
 # macOS
 .DS_Store
@@ -137,3 +153,4 @@ tmp/
 celerybeat.pid
 uwsgi.log
 uwsgi.pid
+cantaloupe-files/

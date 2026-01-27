@@ -54,11 +54,19 @@ services:
       - CANTALOUPE_HTTPSOURCE_BASICLOOKUPSTRATEGY_URL_PREFIX=https://host.docker.internal:5000/records/
       # Trust local HTTPS (self-signed) during development
       - CANTALOUPE_HTTPSOURCE_ALLOW_INSECURE=true
-      # Enable server-side caches
-      - CANTALOUPE_CACHE_SERVER_SOURCE=FilesystemCache
-      - CANTALOUPE_FILESYSTEMCACHE_PATHNAME=/var/cache/cantaloupe
+      # THE ONLY IMPORTANT SETTING: Cache processed images persistently
       - CANTALOUPE_CACHE_SERVER_DERIVATIVE_ENABLED=true
-      - CANTALOUPE_CACHE_SERVER_DERIVATIVE=HeapCache
-      - CANTALOUPE_HEAPCACHE_PERSIST=false
+      - CANTALOUPE_CACHE_SERVER_DERIVATIVE=FilesystemCache
+      - CANTALOUPE_FILESYSTEMCACHE_PATHNAME=/var/cache/cantaloupe
+  search-service:
+    build: ./services/search_service
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./hocr_mount:/hocr_mount
+    environment:
+      - HOCR_BASE_DIR=/hocr_mount/books
+      - SEARCH_SERVICE_BASE_URL=https://127.0.0.1:5001
+      - IIIF_SERVER_BASE_URL=https://127.0.0.1:5000
 volumes:
   data:

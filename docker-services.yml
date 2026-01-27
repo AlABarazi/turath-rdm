@@ -19,14 +19,13 @@ services:
       - "INVENIO_SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://turath-inveniordm:turath-inveniordm@db/turath-inveniordm"
       - "INVENIO_WSGI_PROXIES=2"
       - "INVENIO_RATELIMIT_STORAGE_URL=redis://cache:6379/3"
-      # # MinIO / S3 settings for containerized app so all other container access them
-      # - "AWS_ACCESS_KEY_ID=admin@turath.com"
-      # - "AWS_SECRET_ACCESS_KEY=12345678"
-      # - "AWS_DEFAULT_REGION=us-east-1"
-      # - "AWS_ENDPOINT_URL=http://s3:9000"
-      # - "AWS_S3_ADDRESSING_STYLE=path"
-      # - "AWS_S3_SIGNATURE_VERSION=s3v4"
-      # - "S3_BUCKET_NAME=turath-files"
+      - "AWS_ACCESS_KEY_ID=minioadmin"
+      - "AWS_SECRET_ACCESS_KEY=minioadmin"
+      - "AWS_DEFAULT_REGION=us-east-1"
+      - "AWS_ENDPOINT_URL=http://s3:9000"
+      - "AWS_S3_ADDRESSING_STYLE=path"
+      - "AWS_S3_SIGNATURE_VERSION=s3v4"
+      - "S3_BUCKET_NAME=turath-files"
   frontend:
     build: ./docker/nginx/
     image: turath-inveniordm-frontend

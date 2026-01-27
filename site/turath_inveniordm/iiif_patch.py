@@ -10,6 +10,8 @@ This avoids forking core code while meeting our manifest schema requirements.
 """
 
 import re
+import json
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -136,25 +138,32 @@ def patch_iiif_manifest_schema():
                     continue
         page_count = max(page_nums) if page_nums else 1
 
-        # Build encoded IIIF identifier using the app UI file URL (works with HttpSource)
-        full_url = f"https://host.docker.internal:5000/records/{record_pid}/files/{pdf_key}"
-        enc_id = quote(full_url, safe='')
+        # Build encoded IIIF identifier using FilesystemSource path (relative to /opt/cantaloupe/images)
+        # Format: {record_pid}/{pdf_key}
+        # Note: The file MUST be mirrored to the shared volume at this path.
+        enc_id = quote(f"{record_pid}/{pdf_key}", safe='')
 
-        # Helper to fetch per-page dimensions from Cantaloupe info.json
+        # Load dimensions cache if available (generated during ingestion)
+        cached_dims = []
+        try:
+            # Path must match mirroring logic: ./cantaloupe-files/{record_pid}/dimensions.json
+            # This works in local dev where app runs on host and cantaloupe-files is in CWD.
+            dims_path = Path("cantaloupe-files") / record_pid / "dimensions.json"
+            if dims_path.exists():
+                with open(dims_path, "r") as f:
+                    cached_dims = json.load(f)
+        except Exception:
+            pass # Silent fail to default
+
+        # Helper to fetch per-page dimensions
         def get_dims(page: int):
-            try:
-                info_url = f"http://127.0.0.1:8182/iiif/2/{enc_id}/info.json?page={page}"
-                ir = requests.get(info_url, timeout=10)
-                if ir.ok:
-                    j = ir.json()
-                    w = int(j.get('width') or 0)
-                    h = int(j.get('height') or 0)
-                    if w > 0 and h > 0:
-                        return w, h
-            except Exception:
-                pass
-            # Sensible fallback
-            return 1024, 1024
+            # Use cached dimensions if available (page is 1-indexed)
+            if cached_dims and 0 <= page - 1 < len(cached_dims):
+                d = cached_dims[page - 1]
+                return d["w"], d["h"]
+            
+            # Fallback to standard A4 if no cache (fast but maybe misaligned)
+            return 1240, 1754
 
         # Construct sequence and canvases
         seq_id = f"{app_base}/records/{record_pid}/sequence/normal"
@@ -165,8 +174,10 @@ def patch_iiif_manifest_schema():
             w, h = get_dims(page)
             pstr = f"{page:03d}"
             canvas_uri = f"{app_base}/records/{record_pid}/canvas/p{pstr}"
-            image_api_id = f"{proxy_base}/full/full/0/default.jpg?page={page}"
-            image_service_id = f"{app_base}/iiif/2/{enc_id}"
+            # Use page-qualified image service base so viewer requests '/pN/...' tiles
+            page_service_base = f"{proxy_base}/p{page}"
+            image_api_id = f"{page_service_base}/full/full/0/default.jpg"
+            image_service_id = page_service_base
 
             canvas = {
                 "@id": canvas_uri,
@@ -195,7 +206,7 @@ def patch_iiif_manifest_schema():
                 ],
                 "otherContent": [
                     {
-                        "@id": f"{app_base}/records/{record_pid}/annotations/p{pstr}",
+                        "@id": f"{base_url}/annotations/{record_pid}/p{pstr}",
                         "@type": "sc:AnnotationList",
                         "label": f"Text of page {pstr}",
                     }
