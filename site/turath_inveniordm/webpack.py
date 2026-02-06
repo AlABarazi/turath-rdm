@@ -15,7 +15,9 @@ theme = WebpackThemeBundle(
                     "./js/turath_inveniordm/turath_base_theme_rdm.js"
                 ),
             },
-            aliases={},
+            aliases={
+                "@js/invenio_app_rdm/overridableRegistry/mapping": "js/invenio_app_rdm/overridableRegistry/mapping.js",
+            },
         ),
     },
 )

@@ -7,10 +7,12 @@ def extract_hocr_text(record_pid):
     Extract full text from HOCR files for a given record PID.
     Returns a single string containing all text from all pages.
     """
-    # Locate HOCR directory
-    # Default to relative 'hocr_mount' if config not set, matching signals.py logic
-    base_path = current_app.config.get('HOCR_MOUNT_PATH', os.path.abspath('hocr_mount'))
-    hocr_dir = os.path.join(base_path, 'books', record_pid, 'hocr')
+    # Locate HOCR directory (keep in sync with signals.py HOCR_MOUNT_BASE)
+    base_path = os.environ.get(
+        'HOCR_MOUNT_BASE',
+        current_app.config.get('HOCR_MOUNT_PATH', os.path.abspath('hocr_mount')),
+    )
+    hocr_dir = os.path.join(base_path, record_pid, 'hocr')
     
     if not os.path.exists(hocr_dir):
         current_app.logger.warning(f"Fulltext extraction: HOCR dir not found at {hocr_dir}")
