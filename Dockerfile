@@ -110,6 +110,8 @@ else:
 PY
 
 COPY ./docker/uwsgi/ ${INVENIO_INSTANCE_PATH}
+COPY ./docker/resolve-db-uri.sh ${INVENIO_INSTANCE_PATH}/resolve-db-uri.sh
+RUN chmod +x ${INVENIO_INSTANCE_PATH}/resolve-db-uri.sh
 COPY ./invenio.cfg ${INVENIO_INSTANCE_PATH}
 COPY ./templates/ ${INVENIO_INSTANCE_PATH}/templates/
 COPY ./app_data/ ${INVENIO_INSTANCE_PATH}/app_data/
