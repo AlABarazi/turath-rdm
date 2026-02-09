@@ -14,6 +14,9 @@ COPY site ./site
 COPY Pipfile Pipfile.lock ./
 RUN pipenv lock --clear && pipenv install --system
 
+RUN pip uninstall -y turath-inveniordm || true && \
+    pip install --no-deps -e /opt/invenio/src/site
+
 # Patch invenio_communities migration to align group_id type with accounts_role.id (string)
 # This avoids a FK type mismatch during Alembic migrations when using accounts 6.x.
 RUN python - <<'PY'
