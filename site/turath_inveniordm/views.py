@@ -75,8 +75,7 @@ def create_blueprint(app):
             else:
                 id_raw, op_part = rest, ""
 
-        # Percent-encode identifier for upstream Cantaloupe
-        encoded_id = quote(unquote(id_raw), safe="")
+        encoded_id = quote(unquote(id_raw), safe="!")
 
         # Support page-qualified routes like .../{encoded_id}/p{N}/... by mapping to upstream ?page=N
         page_param = None
@@ -127,7 +126,10 @@ def create_blueprint(app):
                     data = json.loads(upstream.content.decode("utf-8", "ignore"))
                 except Exception:
                     data = {}
-            base_id = f"{request.host_url.rstrip('/')}/iiif/{version}/{encoded_id}"
+            route_prefix = request.path.split("/", 2)[1]
+            base_id = (
+                f"{request.host_url.rstrip('/')}/{route_prefix}/{version}/{encoded_id}"
+            )
             if page_param is not None:
                 base_id = f"{base_id}/p{page_param}"
             if isinstance(data, dict):
@@ -149,5 +151,9 @@ def create_blueprint(app):
             (k, v) for k, v in upstream.headers.items() if k.lower() not in excluded
         ]
         return Response(generate(), status=upstream.status_code, headers=resp_headers)
+
+    @blueprint.route("/iiif-pdf/<path:path>", methods=["GET", "HEAD"])
+    def proxy_iiif_pdf(path):
+        return proxy_iiif(path)
 
     return blueprint

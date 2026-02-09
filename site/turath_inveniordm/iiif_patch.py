@@ -9,14 +9,16 @@ Adds:
 This avoids forking core code while meeting our manifest schema requirements.
 """
 
+import os
 import re
 import json
-from pathlib import Path
 from urllib.parse import quote
 
 import requests
 from flask import current_app
 from invenio_rdm_records.resources.serializers.iiif.schema import IIIFManifestV2Schema
+
+from .cantaloupe_mirror import get_cantaloupe_files_base
 
 
 def patch_iiif_manifest_schema():
@@ -89,15 +91,25 @@ def patch_iiif_manifest_schema():
         # Build canvases for PDF pages with HOCR seeAlso
         # =============================
         try:
-            app_base = current_app.config.get('APP_BASE') or 'https://127.0.0.1:5000'
+            app_base = (
+                current_app.config.get('APP_BASE')
+                or os.environ.get('APP_BASE')
+                or 'https://127.0.0.1:5000'
+            )
+            app_api_base = (
+                current_app.config.get('APP_API_BASE')
+                or os.environ.get('APP_API_BASE')
+                or app_base
+            )
         except Exception:
             app_base = 'https://127.0.0.1:5000'
+            app_api_base = app_base
 
         # Fetch record files metadata from REST API to find the PDF & HOCR files
         pdf_key = None
         hocr_keys = []
         try:
-            api_url = f"{app_base}/api/records/{record_pid}"
+            api_url = f"{app_api_base}/api/records/{record_pid}"
             r = requests.get(api_url, timeout=10, verify=False)
             if r.ok:
                 data = r.json()
@@ -127,7 +139,7 @@ def patch_iiif_manifest_schema():
             # No PDF found; nothing to do
             return manifest
 
-        # Determine page count from HOCR files (NNN.hocr); fallback to 1
+        # Determine page count: prefer HOCR count, fallback to dimensions.json, then 1
         page_nums = []
         for key in hocr_keys:
             m = re.search(r"(\d{3})\.hocr$", key)
@@ -136,24 +148,21 @@ def patch_iiif_manifest_schema():
                     page_nums.append(int(m.group(1)))
                 except Exception:
                     continue
-        page_count = max(page_nums) if page_nums else 1
+        hocr_page_count = max(page_nums) if page_nums else 0
 
-        # Build encoded IIIF identifier using FilesystemSource path (relative to /opt/cantaloupe/images)
-        # Format: {record_pid}/{pdf_key}
-        # Note: The file MUST be mirrored to the shared volume at this path.
-        enc_id = quote(f"{record_pid}/{pdf_key}", safe='')
+        enc_id = quote(f"{record_pid}!{pdf_key}", safe="!")
 
-        # Load dimensions cache if available (generated during ingestion)
+        # Load dimensions cache (generated during PDF mirroring)
         cached_dims = []
         try:
-            # Path must match mirroring logic: ./cantaloupe-files/{record_pid}/dimensions.json
-            # This works in local dev where app runs on host and cantaloupe-files is in CWD.
-            dims_path = Path("cantaloupe-files") / record_pid / "dimensions.json"
+            dims_path = get_cantaloupe_files_base() / record_pid / "dimensions.json"
             if dims_path.exists():
                 with open(dims_path, "r") as f:
                     cached_dims = json.load(f)
         except Exception:
-            pass # Silent fail to default
+            pass
+
+        page_count = max(hocr_page_count, len(cached_dims), 1)
 
         # Helper to fetch per-page dimensions
         def get_dims(page: int):

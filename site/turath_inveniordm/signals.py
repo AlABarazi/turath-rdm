@@ -7,6 +7,9 @@ Automatically syncs HOCR files from records to filesystem for fast search/annota
 import os
 import shutil
 import logging
+from contextvars import ContextVar
+from pathlib import Path
+
 from invenio_rdm_records.records.api import RDMRecord
 from invenio_rdm_records.proxies import current_rdm_records_service
 from invenio_records.signals import (
@@ -14,9 +17,21 @@ from invenio_records.signals import (
     after_record_update,
     before_record_delete
 )
+
+from .cantaloupe_mirror import (
+    cleanup_cantaloupe_record_dir,
+    create_dimensions_cache_from_hocr_dir,
+    get_cantaloupe_files_base,
+    mirror_pdf_to_cantaloupe_filesystem,
+)
 from .fulltext import extract_hocr_text
 
 logger = logging.getLogger(__name__)
+
+_fulltext_update_in_progress = ContextVar(
+    "turath_fulltext_update_in_progress",
+    default=False,
+)
 
 # Base directory for HOCR filesystem cache
 # Default to local project directory for dev (invenio-cli run), /hocr_mount/books for prod (containers)
@@ -145,6 +160,9 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
     """
     if not isinstance(record, RDMRecord):
         return
+
+    if _fulltext_update_in_progress.get():
+        return
     
     record_pid = record.pid.pid_value
     
@@ -156,6 +174,7 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
     if record.get('is_deleted', False):
         logger.info(f"🪦 Record {record_pid} soft deleted - cleaning up HOCR")
         cleanup_hocr_from_filesystem(record_pid)
+        cleanup_cantaloupe_record_dir(record_pid)
         return
     
     # =============================
@@ -186,26 +205,59 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
         hocr_count = sync_hocr_to_filesystem(record)
         if hocr_count == 0:
             logger.info(f"ℹ️ Record {record_pid} has no HOCR files")
-        else:
-            # T7: Unified Search - Indexing
+        try:
+            mirror_pdf_to_cantaloupe_filesystem(record, record_pid)
+            hocr_dir = os.path.join(HOCR_MOUNT_BASE, record_pid, 'hocr')
+            dims_file = (
+                get_cantaloupe_files_base()
+                / record_pid
+                / "dimensions.json"
+            )
+            create_dimensions_cache_from_hocr_dir(
+                Path(hocr_dir),
+                dims_file,
+            )
+        except Exception as e:
+            logger.error(
+                "❌ Failed to mirror PDF/dimensions for %s: %s",
+                record_pid,
+                e,
+            )
+
+        if hocr_count == 0:
+            return
+
+        try:
+            logger.info(f"🔍 Extracting fulltext for {record_pid}...")
+            fulltext = extract_hocr_text(record_pid)
+            if not fulltext:
+                logger.warning(f"⚠️ No text extracted for {record_pid}")
+                return
+
+            existing = (record.get('custom_fields') or {}).get('turath:fulltext')
+            if existing == fulltext:
+                logger.info(
+                    "ℹ️ Fulltext already up-to-date for %s; skipping commit",
+                    record_pid,
+                )
+                return
+
+            record.setdefault('custom_fields', {})['turath:fulltext'] = fulltext
+
+            token = _fulltext_update_in_progress.set(True)
             try:
-                logger.info(f"🔍 Extracting fulltext for {record_pid}...")
-                fulltext = extract_hocr_text(record_pid)
-                if fulltext:
-                    # Inject into top-level field (not custom_fields to avoid UI display)
-                    # NOTE: This requires 'fulltext' to be allowed by the schema or dynamic mapping
-                    record['fulltext'] = fulltext
-                    
-                    # We must commit because we are in 'after_...' signal (transaction closed?)
-                    # Actually, after_record_update is sent AFTER commit.
-                    # So we need to commit AGAIN and Re-index.
-                    record.commit()
-                    current_rdm_records_service.indexer.index(record)
-                    logger.info(f"✅ Indexed fulltext ({len(fulltext)} chars) for {record_pid}")
-                else:
-                    logger.warning(f"⚠️ No text extracted for {record_pid}")
-            except Exception as e:
-                logger.error(f"❌ Failed to index fulltext for {record_pid}: {e}")
+                record.commit()
+                current_rdm_records_service.indexer.index(record)
+            finally:
+                _fulltext_update_in_progress.reset(token)
+
+            logger.info(
+                "✅ Indexed fulltext (%s chars) for %s",
+                len(fulltext),
+                record_pid,
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to index fulltext for {record_pid}: {e}")
 
     else:
         logger.debug(f"Record {record_pid} has files disabled")
@@ -232,3 +284,4 @@ def handle_hard_delete(sender, record=None, **kwargs):
     
     logger.info(f"🗑️ Hard delete signal for {record.pid.pid_value}")
     cleanup_hocr_from_filesystem(record.pid.pid_value)
+    cleanup_cantaloupe_record_dir(record.pid.pid_value)
