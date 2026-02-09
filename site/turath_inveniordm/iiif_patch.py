@@ -12,10 +12,12 @@ This avoids forking core code while meeting our manifest schema requirements.
 import os
 import re
 import json
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
 from flask import current_app
+from invenio_rdm_records.records.api import RDMRecord
 from invenio_rdm_records.resources.serializers.iiif.schema import IIIFManifestV2Schema
 
 from .cantaloupe_mirror import get_cantaloupe_files_base
@@ -109,31 +111,61 @@ def patch_iiif_manifest_schema():
         pdf_key = None
         hocr_keys = []
         try:
-            api_url = f"{app_api_base}/api/records/{record_pid}"
-            r = requests.get(api_url, timeout=10, verify=False)
-            if r.ok:
-                data = r.json()
-                entries = (data.get('files') or {}).get('entries') or {}
-                # entries can be a dict mapping filename -> file obj, or a list of file objs
-                if isinstance(entries, dict):
-                    for map_key, e in entries.items():
-                        key = e.get('key') or map_key or ''
-                        key_l = key.lower()
-                        if key_l.endswith('.pdf'):
-                            pdf_key = key
-                        elif key_l.endswith('.hocr'):
-                            hocr_keys.append(key)
-                elif isinstance(entries, list):
-                    for e in entries:
-                        key = (e or {}).get('key') or (e or {}).get('id') or ''
-                        key_l = key.lower()
-                        if key_l.endswith('.pdf'):
-                            pdf_key = key
-                        elif key_l.endswith('.hocr'):
-                            hocr_keys.append(key)
+            record_dir = get_cantaloupe_files_base() / record_pid
+            if record_dir.exists():
+                pdf_paths = sorted(
+                    p
+                    for p in record_dir.iterdir()
+                    if p.is_file() and p.name.lower().endswith(".pdf")
+                )
+                if pdf_paths:
+                    pdf_key = pdf_paths[0].name
         except Exception:
-            # If API call fails, keep manifest as-is
-            return manifest
+            pass
+
+        if not pdf_key:
+            try:
+                api_url = f"{app_api_base}/api/records/{record_pid}"
+                r = requests.get(api_url, timeout=2, verify=False)
+                if r.ok:
+                    data = r.json()
+                    entries = (data.get('files') or {}).get('entries') or {}
+                    if isinstance(entries, dict):
+                        for map_key, e in entries.items():
+                            key = e.get('key') or map_key or ''
+                            key_l = key.lower()
+                            if key_l.endswith('.pdf'):
+                                pdf_key = key
+                            elif key_l.endswith('.hocr'):
+                                hocr_keys.append(key)
+                    elif isinstance(entries, list):
+                        for e in entries:
+                            key = (
+                                (e or {}).get('key')
+                                or (e or {}).get('id')
+                                or ''
+                            )
+                            key_l = key.lower()
+                            if key_l.endswith('.pdf'):
+                                pdf_key = key
+                            elif key_l.endswith('.hocr'):
+                                hocr_keys.append(key)
+            except Exception:
+                pass
+
+        if not pdf_key or not hocr_keys:
+            try:
+                record = RDMRecord.pid.resolve(record_pid)
+                if record.files.enabled:
+                    for file_key in record.files.entries.keys():
+                        file_key_l = file_key.lower()
+                        if not pdf_key and file_key_l.endswith(".pdf"):
+                            pdf_key = file_key
+                            continue
+                        if file_key_l.endswith(".hocr") and file_key not in hocr_keys:
+                            hocr_keys.append(file_key)
+            except Exception:
+                pass
 
         if not pdf_key:
             # No PDF found; nothing to do
@@ -148,6 +180,24 @@ def patch_iiif_manifest_schema():
                     page_nums.append(int(m.group(1)))
                 except Exception:
                     continue
+
+        try:
+            hocr_mount_base = (
+                current_app.config.get("HOCR_MOUNT_BASE")
+                or os.environ.get("HOCR_MOUNT_BASE")
+            )
+            if hocr_mount_base:
+                hocr_dir = Path(hocr_mount_base) / record_pid / "hocr"
+                for hocr_path in hocr_dir.glob("*.hocr"):
+                    m = re.search(r"(\d{3})\.hocr$", hocr_path.name)
+                    if not m:
+                        continue
+                    try:
+                        page_nums.append(int(m.group(1)))
+                    except Exception:
+                        continue
+        except Exception:
+            pass
         hocr_page_count = max(page_nums) if page_nums else 0
 
         enc_id = quote(f"{record_pid}!{pdf_key}", safe="!")
