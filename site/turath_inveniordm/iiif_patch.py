@@ -227,14 +227,14 @@ def patch_iiif_manifest_schema():
         # Construct sequence and canvases
         seq_id = f"{app_base}/records/{record_pid}/sequence/normal"
         canvases = []
-        proxy_base = f"{app_base}/iiif/2/{enc_id}"
 
         for page in range(1, page_count + 1):
             w, h = get_dims(page)
             pstr = f"{page:03d}"
             canvas_uri = f"{app_base}/records/{record_pid}/canvas/p{pstr}"
-            # Use page-qualified image service base so viewer requests '/pN/...' tiles
-            page_service_base = f"{proxy_base}/p{page}"
+            # Cantaloupe meta-identifier: identifier;pageNumber (1-indexed)
+            # ALB routes /iiif/* directly to Cantaloupe which understands this
+            page_service_base = f"{app_base}/iiif/2/{enc_id};{page}"
             image_api_id = f"{page_service_base}/full/full/0/default.jpg"
             image_service_id = page_service_base
 
