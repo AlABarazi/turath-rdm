@@ -56,6 +56,9 @@ requests.packages.urllib3.disable_warnings()  # self-signed TLS in dev
 # ---------- helpers ----------
 
 def load_token(env_path: str = ".env") -> Optional[str]:
+    token = os.getenv("RDM_API_TOKEN")
+    if token:
+        return token
     if os.path.exists(env_path):
         try:
             with open(env_path, "r", encoding="utf-8") as f:
@@ -64,7 +67,7 @@ def load_token(env_path: str = ".env") -> Optional[str]:
                         return line.strip().split("=", 1)[1]
         except Exception:
             pass
-    return os.getenv("RDM_API_TOKEN")
+    return None
 
 
 def h_auth(token: str) -> Dict[str, str]:

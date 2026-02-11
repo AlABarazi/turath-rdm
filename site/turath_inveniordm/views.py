@@ -1,6 +1,8 @@
 """Additional views and reverse proxy endpoints for IIIF."""
 
 import logging
+import os
+from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
 import requests
@@ -197,6 +199,11 @@ def create_api_blueprint(app):
             from invenio_db import db
             from .signals import sync_hocr_to_filesystem
             from .fulltext import extract_hocr_text
+            from .cantaloupe_mirror import (
+                mirror_pdf_to_cantaloupe_filesystem,
+                create_dimensions_cache_from_hocr_dir,
+                get_cantaloupe_files_base,
+            )
 
             pid = PersistentIdentifier.get("recid", pid_value)
             record = RDMRecord.get_record(pid.object_uuid)
@@ -204,12 +211,42 @@ def create_api_blueprint(app):
             hocr_count = sync_hocr_to_filesystem(record)
             logger.info("Synced %d HOCR files for %s", hocr_count, pid_value)
 
+            pdf_mirrored = False
+            try:
+                pdf_path = mirror_pdf_to_cantaloupe_filesystem(
+                    record, pid_value,
+                )
+                pdf_mirrored = pdf_path is not None
+                if pdf_mirrored:
+                    logger.info("Mirrored PDF to %s", pdf_path)
+                    hocr_base = os.environ.get(
+                        "HOCR_MOUNT_BASE", "hocr_mount",
+                    )
+                    hocr_dir = Path(hocr_base) / pid_value / "hocr"
+                    dims_file = (
+                        get_cantaloupe_files_base()
+                        / pid_value
+                        / "dimensions.json"
+                    )
+                    create_dimensions_cache_from_hocr_dir(
+                        hocr_dir, dims_file,
+                    )
+                    logger.info(
+                        "Created dimensions cache for %s", pid_value,
+                    )
+            except Exception as mirror_exc:
+                logger.error(
+                    "PDF mirror/dimensions failed for %s: %s",
+                    pid_value, mirror_exc,
+                )
+
             if hocr_count == 0:
                 return jsonify({
                     "status": "ok",
                     "message": "No HOCR files found",
                     "hocr_count": 0,
                     "fulltext_length": 0,
+                    "pdf_mirrored": pdf_mirrored,
                 }), 200
 
             fulltext = extract_hocr_text(pid_value)
@@ -235,6 +272,7 @@ def create_api_blueprint(app):
                 "message": "Fulltext indexed",
                 "hocr_count": hocr_count,
                 "fulltext_length": len(fulltext),
+                "pdf_mirrored": pdf_mirrored,
             }), 200
 
         except Exception as exc:
