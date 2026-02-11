@@ -179,11 +179,18 @@ def create_api_blueprint(app):
         so fulltext extraction runs server-side where Invenio packages
         and EFS mounts are available.
         """
-        from flask_login import current_user
-        if not current_user.is_authenticated:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
             return jsonify({"status": "error", "message": "Authentication required"}), 401
 
         try:
+            from invenio_oauth2server.models import Token
+            token_string = auth_header.split(" ", 1)[1]
+            token_obj = Token.query.filter_by(
+                access_token=token_string
+            ).first()
+            if not token_obj:
+                return jsonify({"status": "error", "message": "Invalid token"}), 401
             from invenio_pidstore.models import PersistentIdentifier
             from invenio_rdm_records.records.api import RDMRecord
             from invenio_rdm_records.proxies import current_rdm_records_service
