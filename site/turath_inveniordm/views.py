@@ -1,10 +1,14 @@
 """Additional views and reverse proxy endpoints for IIIF."""
 
-from flask import Blueprint, Response, request
+import logging
+
+from flask import Blueprint, Response, jsonify, request
 import requests
 import json
 import re
 from urllib.parse import quote, unquote
+
+logger = logging.getLogger(__name__)
 
 #
 # Registration
@@ -157,3 +161,80 @@ def create_blueprint(app):
         return proxy_iiif(path)
 
     return blueprint
+
+
+def create_api_blueprint(app):
+    """Register API blueprint with fulltext indexing endpoint."""
+    api_bp = Blueprint(
+        "turath_inveniordm_api",
+        __name__,
+    )
+
+    @api_bp.route("/index-fulltext/<pid_value>", methods=["POST"])
+    def index_fulltext(pid_value):
+        """
+        Trigger HOCR sync and fulltext indexing for a published record.
+
+        Designed to be called by the upload script after publishing,
+        so fulltext extraction runs server-side where Invenio packages
+        and EFS mounts are available.
+        """
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return jsonify({"status": "error", "message": "Authentication required"}), 401
+
+        try:
+            from invenio_pidstore.models import PersistentIdentifier
+            from invenio_rdm_records.records.api import RDMRecord
+            from invenio_rdm_records.proxies import current_rdm_records_service
+            from invenio_db import db
+            from .signals import sync_hocr_to_filesystem
+            from .fulltext import extract_hocr_text
+
+            pid = PersistentIdentifier.get("recid", pid_value)
+            record = RDMRecord.get_record(pid.object_uuid)
+
+            hocr_count = sync_hocr_to_filesystem(record)
+            logger.info("Synced %d HOCR files for %s", hocr_count, pid_value)
+
+            if hocr_count == 0:
+                return jsonify({
+                    "status": "ok",
+                    "message": "No HOCR files found",
+                    "hocr_count": 0,
+                    "fulltext_length": 0,
+                }), 200
+
+            fulltext = extract_hocr_text(pid_value)
+            if not fulltext:
+                return jsonify({
+                    "status": "ok",
+                    "message": "HOCR synced but no text extracted",
+                    "hocr_count": hocr_count,
+                    "fulltext_length": 0,
+                }), 200
+
+            record.setdefault("custom_fields", {})["turath:fulltext"] = fulltext
+            record.commit()
+            db.session.commit()
+            current_rdm_records_service.indexer.index(record)
+
+            logger.info(
+                "Indexed fulltext (%d chars) for %s",
+                len(fulltext), pid_value,
+            )
+            return jsonify({
+                "status": "ok",
+                "message": "Fulltext indexed",
+                "hocr_count": hocr_count,
+                "fulltext_length": len(fulltext),
+            }), 200
+
+        except Exception as exc:
+            logger.exception("Failed to index fulltext for %s", pid_value)
+            return jsonify({
+                "status": "error",
+                "message": str(exc),
+            }), 500
+
+    return api_bp

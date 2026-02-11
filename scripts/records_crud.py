@@ -395,53 +395,41 @@ def s3_client_from_env():
     )
 
 
-def ensure_fulltext_indexing(record_id: str):
+def trigger_fulltext_indexing(base_url: str, token: str, record_id: str):
     """
-    Explicitly trigger HOCR sync and fulltext indexing for a record.
-    This runs via Invenio application context (server-side logic),
-    ensuring robust indexing even if HTTP signals were missed.
+    Trigger fulltext indexing via the server-side API endpoint.
+
+    Calls POST /api/index-fulltext/<pid> on the InvenioRDM server,
+    which syncs HOCR files to the filesystem and extracts text
+    inside the container where Invenio packages are available.
     """
-    print(f"\n[Indexer] Ensuring fulltext indexing for {record_id}...")
+    url = f"{base_url}/api/index-fulltext/{record_id}"
+    print(f"\n[Indexer] Triggering fulltext indexing for {record_id}...")
+    print(f"[Indexer] POST {url}")
     try:
-        from invenio_app.factory import create_app
-        from invenio_pidstore.models import PersistentIdentifier
-        from invenio_rdm_records.records.api import RDMRecord
-        from invenio_rdm_records.proxies import current_rdm_records_service
-        from turath_inveniordm.signals import sync_hocr_to_filesystem
-        from turath_inveniordm.fulltext import extract_hocr_text
-        
-        app = create_app()
-        with app.app_context():
-            # Resolve PID
-            pid = PersistentIdentifier.get('recid', record_id)
-            record = RDMRecord.get_record(pid.object_uuid)
-            
-            # 1. Sync Files
-            print(f"[Indexer] Syncing HOCR files to disk...")
-            count = sync_hocr_to_filesystem(record)
-            print(f"[Indexer] Synced {count} files.")
-            
-            # 2. Extract Text
-            print(f"[Indexer] Extracting text...")
-            text = extract_hocr_text(record_id)
-            if text:
-                print(f"[Indexer] Extracted {len(text)} characters.")
-                # 3. Update Record
-                record.setdefault('custom_fields', {})['turath:fulltext'] = text
-                record.commit()
-                # 4. Index
-                print(f"[Indexer] Re-indexing record...")
-                current_rdm_records_service.indexer.index(record)
-                print(f"[Indexer] ✅ Success.")
-            else:
-                print(f"[Indexer] ⚠️ No text extracted (no HOCR?).")
-                
-    except ImportError:
-        print("[Indexer] ⚠️ Invenio packages not found. Skipping server-side indexing. Ensure you run with 'pipenv run'.")
-    except Exception as e:
-        print(f"[Indexer] ❌ Failed: {e}")
-        import traceback
-        traceback.print_exc()
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            verify=False,
+            timeout=300,
+        )
+        data = resp.json() if resp.headers.get(
+            "content-type", ""
+        ).startswith("application/json") else {}
+
+        if resp.status_code == 200:
+            hocr_count = data.get("hocr_count", "?")
+            text_len = data.get("fulltext_length", "?")
+            print(f"[Indexer] ✅ {data.get('message', 'OK')}")
+            print(f"[Indexer]    HOCR files: {hocr_count}")
+            print(f"[Indexer]    Fulltext length: {text_len} chars")
+        else:
+            print(
+                f"[Indexer] ❌ HTTP {resp.status_code}: "
+                f"{data.get('message', resp.text[:200])}"
+            )
+    except requests.RequestException as exc:
+        print(f"[Indexer] ❌ Request failed: {exc}")
 
 
 def mirror_pdf_to_cantaloupe(pdf_path: Path, book_id: str) -> Optional[Tuple[str, str]]:
@@ -689,8 +677,9 @@ def cmd_ingest_book(args):
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
     
-    # Ensure fulltext indexing (server-side logic)
-    ensure_fulltext_indexing(record_id)
+    # Trigger fulltext indexing via server-side API endpoint
+    if hocr_files:
+        trigger_fulltext_indexing(args.base_url, token, record_id)
     
     # Return record_id for use by calling scripts
     return record_id
