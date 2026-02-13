@@ -11,17 +11,19 @@ class ExcludeFulltextSourceParam(ParamInterpreter):
 
     Two fields cause search response bloat:
     - turath:fulltext: ~1MB per record (full HOCR-extracted text)
-    - files: metadata for every attached file (216KB for 899-file book)
+    - files.entries: metadata for every attached file (216KB for 899-file book)
 
-    Both remain fully indexed/searchable. Files are accessible via
-    the dedicated /api/records/{id}/files endpoint.
+    We exclude files.entries (not files itself) because InvenioRDM's
+    pre_load checks `if "entries" in files:` — setting files to None
+    causes a TypeError. Keeping the parent object avoids the crash.
+    Individual file details are accessible via /api/records/{id}/files.
     """
 
     def apply(self, identity, search, params):
-        """Remove fulltext and file metadata from _source."""
+        """Remove fulltext and per-file metadata from _source."""
         return search.source(
             excludes=[
                 "custom_fields.turath:fulltext",
-                "files",
+                "files.entries",
             ],
         )
