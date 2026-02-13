@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import os
 import sys
 import shutil
@@ -51,6 +52,8 @@ except Exception:
     BotoConfig = None
 
 requests.packages.urllib3.disable_warnings()  # self-signed TLS in dev
+
+logger = logging.getLogger(__name__)
 
 
 # ---------- helpers ----------
@@ -83,8 +86,8 @@ def api_post(url: str, token: str, json_body=None) -> requests.Response:
     return requests.post(url, headers=headers, json=json_body, verify=False)
 
 
-def api_post_empty(url: str, token: str) -> requests.Response:
-    return requests.post(url, headers=h_auth(token), verify=False)
+def api_post_empty(url: str, token: str, timeout: int = 30) -> requests.Response:
+    return requests.post(url, headers=h_auth(token), verify=False, timeout=timeout)
 
 
 def api_put_bytes(url: str, token: str, data: bytes, content_type: str = "application/octet-stream") -> requests.Response:
@@ -300,10 +303,39 @@ def upload_and_commit(
 
 
 def publish(base_url: str, token: str, record_id: str) -> dict:
-    r = api_post_empty(f"{base_url}/api/records/{record_id}/draft/actions/publish", token)
+    """Publish a draft record with 504 recovery.
+
+    Large records (800+ files) can exceed the ALB/nginx 60s timeout.
+    The server may complete the publish even though the client gets 504.
+    On 504, we check if the record was actually published before failing.
+    """
+    url = f"{base_url}/api/records/{record_id}/draft/actions/publish"
+    try:
+        r = api_post_empty(url, token, timeout=300)
+    except requests.exceptions.ReadTimeout:
+        logger.warning("Publish request timed out — checking if server completed")
+        return _recover_published_record(base_url, token, record_id)
+
+    if r.status_code == 504:
+        logger.warning("Publish returned 504 — checking if server completed")
+        return _recover_published_record(base_url, token, record_id)
+
     if not r.ok:
         raise RuntimeError(f"Publish failed: {r.status_code} {r.text}")
     return r.json()
+
+
+def _recover_published_record(base_url: str, token: str, record_id: str) -> dict:
+    """Check if a record was published despite a gateway timeout."""
+    import time
+    time.sleep(5)
+    check = api_get(f"{base_url}/api/records/{record_id}", token)
+    if check.ok:
+        logger.info("Record %s was published by the server despite timeout", record_id)
+        return check.json()
+    raise RuntimeError(
+        f"Publish timed out and record {record_id} not found (status {check.status_code})"
+    )
 
 
 def list_files(base_url: str, token: str, record_id: str) -> List[dict]:

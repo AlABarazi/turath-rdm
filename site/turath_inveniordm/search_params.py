@@ -7,16 +7,21 @@ from invenio_records_resources.services.records.params.base import (
 
 class ExcludeFulltextSourceParam(ParamInterpreter):
     """
-    Exclude the fulltext field from OpenSearch _source responses.
+    Exclude heavy fields from OpenSearch _source responses.
 
-    The turath:fulltext field can be ~1MB per record. Including it
-    in every search response wastes bandwidth and slows down queries.
-    The field remains fully indexed and searchable — this only
-    prevents the raw text from being returned in results.
+    Two fields cause search response bloat:
+    - turath:fulltext: ~1MB per record (full HOCR-extracted text)
+    - files: metadata for every attached file (216KB for 899-file book)
+
+    Both remain fully indexed/searchable. Files are accessible via
+    the dedicated /api/records/{id}/files endpoint.
     """
 
     def apply(self, identity, search, params):
-        """Remove fulltext from _source in search results."""
+        """Remove fulltext and file metadata from _source."""
         return search.source(
-            excludes=["custom_fields.turath:fulltext"],
+            excludes=[
+                "custom_fields.turath:fulltext",
+                "files",
+            ],
         )
