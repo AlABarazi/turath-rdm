@@ -7,21 +7,22 @@ from invenio_records_resources.services.records.params.base import (
 
 class ExcludeFulltextSourceParam(ParamInterpreter):
     """
-    Exclude heavy fields from OpenSearch _source responses.
+    Exclude the fulltext field from OpenSearch _source responses.
 
-    Two fields cause search response bloat:
-    - turath:fulltext: ~1MB per record (full HOCR-extracted text)
-    - files.entries: ~100KB per record (metadata for hundreds of HOCR files)
+    The turath:fulltext field stores the entire HOCR-extracted text of
+    a book (~1MB per record). Excluding it from _source cuts the dominant
+    bloat factor from search responses. The field remains fully indexed
+    and searchable.
 
-    Both remain fully indexed and searchable. Thumbnails are served via
-    links.thumbnails (not files.entries), so excluding entries is safe.
+    Note: files.entries is intentionally NOT excluded because InvenioRDM
+    generates links.thumbnails from files.entries during serialization.
+    Excluding entries removes thumbnails from search results.
     """
 
     def apply(self, identity, search, params):
-        """Remove fulltext and per-file metadata from _source."""
+        """Remove fulltext from _source in search results."""
         return search.source(
             excludes=[
                 "custom_fields.turath:fulltext",
-                "files.entries",
             ],
         )
