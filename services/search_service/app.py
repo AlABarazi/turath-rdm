@@ -6,6 +6,8 @@ from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 from bs4 import BeautifulSoup
 
+import concurrent.futures
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +19,7 @@ CORS(app)
 HOCR_BASE_DIR = os.environ.get('HOCR_BASE_DIR', '/hocr_mount/books')
 SEARCH_SERVICE_BASE_URL = os.environ.get('SEARCH_SERVICE_BASE_URL', 'https://127.0.0.1:5001')
 IIIF_SERVER_BASE_URL = os.environ.get('IIIF_SERVER_BASE_URL', 'https://127.0.0.1:5000')
+MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 4))
 
 def get_hocr_files(record_pid):
     """Get sorted list of HOCR files for a record."""
@@ -28,6 +31,10 @@ def get_hocr_files(record_pid):
     # Sort by filename (assuming 001.hocr, 002.hocr, etc.)
     files.sort()
     return files
+
+def parse_hocr_file_wrapper(args):
+    """Wrapper for parse_hocr_file to be used with ProcessPoolExecutor."""
+    return parse_hocr_file(*args)
 
 def parse_hocr_file(file_path, page_index, query):
     """Parse a single HOCR file and find matches."""
@@ -200,10 +207,17 @@ def search(record_pid):
 
     all_matches = []
     
-    # Search in each file
-    for i, file_path in enumerate(hocr_files):
-        matches = parse_hocr_file(file_path, i, query)
-        all_matches.extend(matches)
+    # Search in files in parallel
+    # Prepare arguments for each file: (file_path, index, query)
+    search_args = [(f, i, query) for i, f in enumerate(hocr_files)]
+    
+    with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # Use map to process files in parallel while maintaining order roughly
+        # map returns an iterator of results
+        results = executor.map(parse_hocr_file_wrapper, search_args)
+        
+        for file_matches in results:
+            all_matches.extend(file_matches)
         
     # Construct IIIF response
     resources = []
