@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 
 const FALLBACK_TITLE = "No title";
-const THUMBNAIL_FILENAMES = ["thumbnail.jpg", "thumbnail.jpeg", "thumbnail.png"];
 const COVER_WIDTH_PX = 110;
 const COVER_HEIGHT_PX = 160;
 const THUMBNAIL_LOAD_ROOT_MARGIN_PX = 200;
@@ -74,35 +73,13 @@ function getDate(publicationDate) {
   return yearMatch ? yearMatch[0] : dateString;
 }
 
-function getRecordThumbnailFileKey(files) {
-  const entries = files?.entries;
-  if (!entries) {
-    return "";
-  }
-
-  for (const filename of THUMBNAIL_FILENAMES) {
-    if (entries[filename]) {
-      return filename;
-    }
-  }
-
-  return "";
-}
-
 function getRecordThumbnailUrl(result) {
-  const fileKey = getRecordThumbnailFileKey(result?.files);
-  if (!fileKey) {
+  const thumbnails = result?.links?.thumbnails;
+  if (!thumbnails) {
     return "";
   }
 
-  const filesBaseUrl = result?.links?.files;
-  if (!filesBaseUrl) {
-    return "";
-  }
-
-  const normalizedBaseUrl = filesBaseUrl.replace(/\/$/, "");
-  const encodedFileKey = encodeURIComponent(fileKey);
-  return `${normalizedBaseUrl}/${encodedFileKey}/content`;
+  return thumbnails["250"] || thumbnails["100"] || "";
 }
 
 export function TurathResultsListItemCard({ result, index }) {
