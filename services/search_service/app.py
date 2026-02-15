@@ -7,6 +7,7 @@ from flask_cors import CORS
 from bs4 import BeautifulSoup
 
 import concurrent.futures
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +38,7 @@ def parse_hocr_file_wrapper(args):
     return parse_hocr_file(*args)
 
 def parse_hocr_file(file_path, page_index, query):
-    """Parse a single HOCR file and find matches."""
+    """Parse a single HOCR file and find matches (supporting phrases)."""
     matches = []
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -45,43 +46,88 @@ def parse_hocr_file(file_path, page_index, query):
             
         # Find all words
         words = soup.find_all('span', class_='ocrx_word')
+        if not words:
+            return []
+
+        # 1. Build Full Text & Map
+        full_text = ""
+        word_map = [] 
         
-        for i, word in enumerate(words):
-            text = word.get_text().strip()
+        for w in words:
+            text = w.get_text().strip()
             if not text:
                 continue
-                
-            # Simple case-insensitive substring match
-            if query.lower() in text.lower():
-                # Get bounding box
-                title = word.get('title', '')
-                bbox = None
-                if 'bbox' in title:
-                    parts = title.split(';')
-                    for part in parts:
-                        if 'bbox' in part:
+            
+            # Parse bbox
+            title = w.get('title', '')
+            bbox_coords = None # (x1, y1, x2, y2)
+            
+            if 'bbox' in title:
+                parts = title.split(';')
+                for part in parts:
+                    if 'bbox' in part:
+                        try:
                             coords = part.replace('bbox', '').strip().split()
                             if len(coords) == 4:
-                                x1, y1, x2, y2 = map(int, coords)
-                                w = x2 - x1
-                                h = y2 - y1
-                                bbox = f"{x1},{y1},{w},{h}"
+                                bbox_coords = tuple(map(int, coords))
                                 break
+                        except ValueError:
+                            pass
+            
+            if bbox_coords:
+                start = len(full_text)
+                full_text += text + " " # Add space
+                end = len(full_text) - 1 # Index of last char of word
                 
-                if bbox:
-                    # Get context (previous and next words)
-                    prev_text = words[i-1].get_text().strip() if i > 0 else ""
-                    next_text = words[i+1].get_text().strip() if i < len(words)-1 else ""
-                    
-                    context_before = f"{prev_text} " if prev_text else ""
-                    context_after = f" {next_text}" if next_text else ""
-                    
-                    matches.append({
-                        'text': text,
-                        'context': f"{context_before}<span class='highlight'>{text}</span>{context_after}",
-                        'bbox': bbox,
-                        'page': page_index + 1  # 1-based page number
-                    })
+                word_map.append({
+                    'start': start, 
+                    'end': end, 
+                    'bbox': bbox_coords,
+                    'text': text
+                })
+
+        # 2. Search for query in full text
+        if not query or not full_text:
+            return []
+
+        # Case-insensitive search
+        for m in re.finditer(re.escape(query), full_text, re.IGNORECASE):
+            match_start, match_end = m.span()
+            matched_text = m.group()
+            
+            # 3. Find overlapping words
+            # A word is part of the match if it overlaps with the match range
+            covered_words = [w for w in word_map if w['end'] >= match_start and w['start'] < match_end]
+            
+            if covered_words:
+                # Calculate union bbox
+                min_x1 = min(w['bbox'][0] for w in covered_words)
+                min_y1 = min(w['bbox'][1] for w in covered_words)
+                max_x2 = max(w['bbox'][2] for w in covered_words)
+                max_y2 = max(w['bbox'][3] for w in covered_words)
+                
+                w_final = max_x2 - min_x1
+                h_final = max_y2 - min_y1
+                bbox_str = f"{min_x1},{min_y1},{w_final},{h_final}"
+                
+                # Context (surrounding text)
+                context_start = max(0, match_start - 30)
+                context_end = min(len(full_text), match_end + 30)
+                
+                prefix = "..." if context_start > 0 else ""
+                suffix = "..." if context_end < len(full_text) else ""
+                
+                text_before = full_text[context_start:match_start]
+                text_after = full_text[match_end:context_end]
+                
+                context_html = f"{prefix}{text_before}<span class='highlight'>{matched_text}</span>{text_after}{suffix}"
+
+                matches.append({
+                    'text': matched_text,
+                    'context': context_html,
+                    'bbox': bbox_str,
+                    'page': page_index + 1
+                })
                     
     except Exception as e:
         logger.error(f"Error parsing {file_path}: {e}")
