@@ -326,15 +326,23 @@ def publish(base_url: str, token: str, record_id: str) -> dict:
 
 
 def _recover_published_record(base_url: str, token: str, record_id: str) -> dict:
-    """Check if a record was published despite a gateway timeout."""
+    """Check if a record was published despite a gateway timeout.
+
+    Large records (800+ files) can take 30-60 seconds server-side.
+    We retry several times with increasing delays before giving up.
+    """
     import time
-    time.sleep(5)
-    check = api_get(f"{base_url}/api/records/{record_id}", token)
-    if check.ok:
-        logger.info("Record %s was published by the server despite timeout", record_id)
-        return check.json()
+    delays = [5, 10, 15, 30, 30]
+    for attempt, delay in enumerate(delays, 1):
+        logger.info("Recovery attempt %d/%d — waiting %ds...", attempt, len(delays), delay)
+        time.sleep(delay)
+        check = api_get(f"{base_url}/api/records/{record_id}", token)
+        if check.ok:
+            logger.info("Record %s was published by the server despite timeout", record_id)
+            return check.json()
+        logger.warning("Attempt %d: status %d", attempt, check.status_code)
     raise RuntimeError(
-        f"Publish timed out and record {record_id} not found (status {check.status_code})"
+        f"Publish timed out and record {record_id} not found after {len(delays)} retries"
     )
 
 
@@ -686,6 +694,18 @@ def cmd_ingest_book(args):
             content_type=thumbnail_content_type,
         )
 
+    # Mirror to local disk BEFORE publish so the PDF is on EFS
+    # even if publish times out for large books (800+ files)
+    mirror_pdf_to_local_disk(pdf, record_id, pdf.name, book_dir=book_dir)
+
+    # Mirror to Cantaloupe bucket
+    mirrored = mirror_pdf_to_cantaloupe(pdf, args.book_id)
+    if mirrored:
+        bucket, key = mirrored
+        iiif_base = os.getenv("IIIF_IMAGE_BASE", "http://127.0.0.1:8182")
+        iiif_full = f"{iiif_base}/iiif/2/{key}/full/full/0/default.jpg?page=1"
+        print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
+
     # Publish
     published = publish(args.base_url, token, record_id)
     print({"published": True, "links": published.get("links", {})})
@@ -697,17 +717,6 @@ def cmd_ingest_book(args):
     cl = head_content_length(args.base_url, token, record_id, pdf.name)
     path, size, sha = download_and_sha256(args.base_url, token, record_id, pdf.name)
     print({"pdf_content_length": cl, "download_path": path, "size": size, "sha256": sha})
-
-    # Mirror to Cantaloupe bucket
-    mirrored = mirror_pdf_to_cantaloupe(pdf, args.book_id)
-    if mirrored:
-        bucket, key = mirrored
-        iiif_base = os.getenv("IIIF_IMAGE_BASE", "http://127.0.0.1:8182")
-        iiif_full = f"{iiif_base}/iiif/2/{key}/full/full/0/default.jpg?page=1"
-        print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
-
-    # Mirror to local disk (FilesystemSource)
-    mirror_pdf_to_local_disk(pdf, record_id, pdf.name, book_dir=book_dir)
 
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
