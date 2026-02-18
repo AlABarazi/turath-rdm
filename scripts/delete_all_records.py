@@ -9,10 +9,27 @@ import requests
 requests.packages.urllib3.disable_warnings()
 
 
-def load_token() -> str:
-    token = os.getenv("RDM_API_TOKEN")
+def load_token(env_file: str = ".env") -> str:
+    """Load RDM_API_TOKEN from .env file first, then environment."""
+    token = None
+    env_path = Path(env_file)
+    
+    # Try .env file first
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("RDM_API_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    
+    # Fall back to environment variable
     if not token:
-        raise RuntimeError("RDM_API_TOKEN not set")
+        token = os.getenv("RDM_API_TOKEN")
+    
+    if not token:
+        raise RuntimeError("RDM_API_TOKEN not found in .env or environment")
+    
     return token
 
 
@@ -45,41 +62,34 @@ def iter_records(base_url: str, token: str, page_size: int) -> Iterable[dict]:
 
 
 def delete_record_via_api(base_url: str, token: str, record_id: str) -> bool:
-    response = requests.delete(
+    """Soft-delete a published record via DELETE /api/records/{id}/delete."""
+    get_response = requests.get(
         f"{base_url}/api/records/{record_id}",
         headers=get_auth_headers(token),
         verify=False,
     )
+    if get_response.status_code in {404, 410}:
+        return True
+    if not get_response.ok:
+        print(f"  GET failed: {get_response.status_code} {get_response.text[:200]}")
+        return False
+
+    etag = get_response.headers.get("ETag", "").strip('"')
+    headers = get_json_headers(token)
+    if etag:
+        headers["If-Match"] = etag
+
+    tombstone_body = {"note": "Bulk cleanup for re-upload"}
+
+    response = requests.delete(
+        f"{base_url}/api/records/{record_id}/delete",
+        headers=headers,
+        json=tombstone_body,
+        verify=False,
+    )
     if response.status_code in {200, 202, 204}:
         return True
-    if response.status_code in {404, 410}:
-        return True
-    if response.status_code in {403, 405, 409, 412}:
-        get_response = requests.get(
-            f"{base_url}/api/records/{record_id}",
-            headers=get_auth_headers(token),
-            verify=False,
-        )
-        if get_response.status_code in {404, 410}:
-            return True
-        if not get_response.ok:
-            return False
-
-        etag = get_response.headers.get("ETag")
-        delete_url = (
-            get_response.json().get("links", {}).get("delete")
-            or f"{base_url}/api/records/{record_id}/delete"
-        )
-        headers = get_json_headers(token)
-        if etag:
-            headers = {**headers, "If-Match": etag}
-        response = requests.delete(
-            delete_url,
-            headers=headers,
-            json={},
-            verify=False,
-        )
-        return response.status_code in {200, 202, 204, 404, 410}
+    print(f"  DELETE failed: {response.status_code} {response.text[:200]}")
     return False
 
 
