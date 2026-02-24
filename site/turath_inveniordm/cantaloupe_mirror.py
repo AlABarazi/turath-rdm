@@ -72,9 +72,9 @@ def create_dimensions_cache_from_hocr_dir(
     return dims
 
 
-def cleanup_cantaloupe_record_dir(record_pid: str) -> None:
+def cleanup_cantaloupe_record_dir(parent_id: str) -> None:
     base_dir = get_cantaloupe_files_base()
-    record_dir = base_dir / record_pid
+    record_dir = base_dir / parent_id
     if record_dir.exists():
         shutil.rmtree(record_dir)
 
@@ -92,8 +92,9 @@ def mirror_pdf_to_cantaloupe_filesystem(record, record_pid: str) -> Optional[Pat
     if not pdf_key:
         return None
 
+    parent_id = record.parent.pid.pid_value
     base_dir = get_cantaloupe_files_base()
-    record_dir = base_dir / record_pid
+    record_dir = base_dir / parent_id
     record_dir.mkdir(parents=True, exist_ok=True)
 
     target_pdf_path = record_dir / pdf_key

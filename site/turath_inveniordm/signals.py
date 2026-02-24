@@ -52,29 +52,39 @@ def sync_hocr_to_filesystem(record):
         logger.debug(f"Files not enabled for record {record.pid.pid_value}")
         return 0
     
-    record_pid = record.pid.pid_value
-    hocr_dir = os.path.join(HOCR_MOUNT_BASE, record_pid, 'hocr')
+    parent_id = record.parent.pid.pid_value
+    hocr_dir = os.path.join(HOCR_MOUNT_BASE, parent_id, 'hocr')
     
-    # Remove old directory if exists (for updates)
+    # Count HOCR files in record
+    record_hocr_keys = [k for k in record.files.entries.keys() if k.endswith('.hocr')]
+    
+    # If record has no HOCR files but directory exists with files, preserve them
+    # (supports --mirror-hocr-only workflow where HOCR is only on filesystem)
+    if not record_hocr_keys and os.path.exists(hocr_dir):
+        existing_files = [f for f in os.listdir(hocr_dir) if f.endswith('.hocr')]
+        if existing_files:
+            logger.info(f"Preserving {len(existing_files)} manually mirrored HOCR files for {parent_id}")
+            return len(existing_files)
+    
+    # Remove old directory if exists (for updates when record has HOCR)
     if os.path.exists(hocr_dir):
         try:
             shutil.rmtree(hocr_dir)
-            logger.info(f"Removed old HOCR cache for {record_pid}")
+            logger.info(f"Removed old HOCR cache for {parent_id}")
         except Exception as e:
-            logger.error(f"Failed to remove old HOCR for {record_pid}: {e}")
+            logger.error(f"Failed to remove old HOCR for {parent_id}: {e}")
             return 0
     
     # Create fresh directory
     try:
         os.makedirs(hocr_dir, exist_ok=True)
     except Exception as e:
-        logger.error(f"Failed to create HOCR directory for {record_pid}: {e}")
+        logger.error(f"Failed to create HOCR directory for {parent_id}: {e}")
         return 0
     
-    # Copy all .hocr files
+    # Copy all .hocr files from record
     hocr_count = 0
-    for file_key in record.files.entries.keys():
-        if file_key.endswith('.hocr'):
+    for file_key in record_hocr_keys:
             try:
                 file_obj = record.files[file_key]
                 with file_obj.get_stream('rb') as source:
@@ -85,38 +95,38 @@ def sync_hocr_to_filesystem(record):
                     f.write(content)
                 
                 hocr_count += 1
-                logger.debug(f"Synced {file_key} for {record_pid}")
+                logger.debug(f"Synced {file_key} for {parent_id}")
             except Exception as e:
-                logger.error(f"Failed to sync {file_key} for {record_pid}: {e}")
+                logger.error(f"Failed to sync {file_key} for {parent_id}: {e}")
     
     if hocr_count > 0:
-        logger.info(f"✅ Synced {hocr_count} HOCR files for record {record_pid}")
+        logger.info(f"✅ Synced {hocr_count} HOCR files for parent {parent_id}")
     
     return hocr_count
 
 
-def cleanup_hocr_from_filesystem(record_pid):
+def cleanup_hocr_from_filesystem(parent_id):
     """
-    Remove HOCR filesystem cache for a record PID.
+    Remove HOCR filesystem cache for a parent ID.
     
     Args:
-        record_pid: String record PID
+        parent_id: String parent ID
     
     Returns:
         bool: True if cleanup successful
     """
-    hocr_base_dir = os.path.join(HOCR_MOUNT_BASE, record_pid)
+    hocr_base_dir = os.path.join(HOCR_MOUNT_BASE, parent_id)
     
     if not os.path.exists(hocr_base_dir):
-        logger.debug(f"No HOCR cache to clean for {record_pid}")
+        logger.debug(f"No HOCR cache to clean for {parent_id}")
         return True
     
     try:
         shutil.rmtree(hocr_base_dir)
-        logger.info(f"🗑️ Cleaned up HOCR cache for {record_pid}")
+        logger.info(f"🗑️ Cleaned up HOCR cache for {parent_id}")
         return True
     except Exception as e:
-        logger.error(f"Failed to cleanup HOCR for {record_pid}: {e}")
+        logger.error(f"Failed to cleanup HOCR for {parent_id}: {e}")
         return False
 
 
@@ -172,9 +182,10 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
     # InvenioRDM doesn't physically delete records!
     # It sets is_deleted=True flag instead
     if record.get('is_deleted', False):
+        parent_id = record.parent.pid.pid_value
         logger.info(f"🪦 Record {record_pid} soft deleted - cleaning up HOCR")
-        cleanup_hocr_from_filesystem(record_pid)
-        cleanup_cantaloupe_record_dir(record_pid)
+        cleanup_hocr_from_filesystem(parent_id)
+        cleanup_cantaloupe_record_dir(parent_id)
         return
     
     # =============================
@@ -206,11 +217,12 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
         if hocr_count == 0:
             logger.info(f"ℹ️ Record {record_pid} has no HOCR files")
         try:
+            parent_id = record.parent.pid.pid_value
             mirror_pdf_to_cantaloupe_filesystem(record, record_pid)
-            hocr_dir = os.path.join(HOCR_MOUNT_BASE, record_pid, 'hocr')
+            hocr_dir = os.path.join(HOCR_MOUNT_BASE, parent_id, 'hocr')
             dims_file = (
                 get_cantaloupe_files_base()
-                / record_pid
+                / parent_id
                 / "dimensions.json"
             )
             create_dimensions_cache_from_hocr_dir(
@@ -228,8 +240,9 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
             return
 
         try:
+            parent_id = record.parent.pid.pid_value
             logger.info(f"🔍 Extracting fulltext for {record_pid}...")
-            fulltext = extract_hocr_text(record_pid)
+            fulltext = extract_hocr_text(parent_id)
             if not fulltext:
                 logger.warning(f"⚠️ No text extracted for {record_pid}")
                 return
@@ -282,6 +295,7 @@ def handle_hard_delete(sender, record=None, **kwargs):
     if not isinstance(record, RDMRecord):
         return
     
+    parent_id = record.parent.pid.pid_value
     logger.info(f"🗑️ Hard delete signal for {record.pid.pid_value}")
-    cleanup_hocr_from_filesystem(record.pid.pid_value)
-    cleanup_cantaloupe_record_dir(record.pid.pid_value)
+    cleanup_hocr_from_filesystem(parent_id)
+    cleanup_cantaloupe_record_dir(parent_id)

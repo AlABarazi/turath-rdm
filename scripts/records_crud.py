@@ -508,13 +508,41 @@ def get_hocr_dims(hocr_path: Path) -> Optional[Tuple[int, int]]:
     return None
 
 
-def mirror_pdf_to_local_disk(pdf_path: Path, record_id: str, pdf_key: str, book_dir: Path = None) -> None:
+def mirror_hocr_to_filesystem(hocr_files: List[Path], parent_id: str) -> int:
+    """Mirror HOCR files to filesystem for fulltext search without uploading to record.
+    
+    Args:
+        hocr_files: List of HOCR file paths to mirror
+        parent_id: Parent record ID for directory structure
+    
+    Returns:
+        Number of HOCR files mirrored
+    """
+    if not hocr_files:
+        return 0
+    
+    hocr_mount_base = os.environ.get('HOCR_MOUNT_BASE', os.path.join(os.getcwd(), 'hocr_mount/books'))
+    target_dir = Path(hocr_mount_base) / parent_id / 'hocr'
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"[mirror] Mirroring {len(hocr_files)} HOCR files to {target_dir}...")
+    
+    for hocr_file in hocr_files:
+        target_file = target_dir / hocr_file.name
+        shutil.copy2(hocr_file, target_file)
+        print(f"[mirror]   ✓ {hocr_file.name}")
+    
+    print(f"[mirror] ✅ Mirrored {len(hocr_files)} HOCR files")
+    return len(hocr_files)
+
+
+def mirror_pdf_to_local_disk(pdf_path: Path, parent_id: str, pdf_key: str, book_dir: Path = None) -> None:
     """Mirror PDF to local shared volume for FilesystemSource and cache dimensions (preferring HOCR)."""
     # Base dir is ./cantaloupe-files (mounted to /opt/cantaloupe/images in docker)
     base_dir = Path("cantaloupe-files")
     base_dir.mkdir(exist_ok=True)
     
-    target_dir = base_dir / record_id
+    target_dir = base_dir / parent_id
     target_dir.mkdir(parents=True, exist_ok=True)
     
     target_file = target_dir / pdf_key
@@ -672,18 +700,32 @@ def cmd_ingest_book(args):
         custom_fields=custom_fields,
     )
     record_id = draft.get("id")
-    print({"record_id": record_id})
+    parent_id = draft.get("parent", {}).get("id", record_id)
+    print({"record_id": record_id, "parent_id": parent_id})
 
-    # Init files (PDF + all HOCRs if requested)
-    keys = [pdf.name] + [p.name for p in hocr_files]
+    # Determine whether to upload HOCR to record or just mirror to filesystem
+    mirror_hocr_only = getattr(args, 'mirror_hocr_only', False)
+    
+    # Init files (PDF + HOCRs only if uploading them)
+    keys = [pdf.name]
+    if hocr_files and not mirror_hocr_only:
+        keys.extend([p.name for p in hocr_files])
     if thumbnail_key:
         keys.append(thumbnail_key)
     init_files(args.base_url, token, record_id, keys)
 
     # Upload + commit
     upload_and_commit(args.base_url, token, record_id, pdf.name, pdf)
-    for hocr_path in hocr_files:
-        upload_and_commit(args.base_url, token, record_id, hocr_path.name, hocr_path)
+    
+    if hocr_files:
+        if mirror_hocr_only:
+            # Mirror HOCR directly to filesystem without uploading to record
+            print(f"\n⚡ Mirror-only mode: Copying {len(hocr_files)} HOCR files to filesystem...")
+            mirror_hocr_to_filesystem(hocr_files, parent_id)
+        else:
+            # Upload HOCR to record (traditional mode)
+            for hocr_path in hocr_files:
+                upload_and_commit(args.base_url, token, record_id, hocr_path.name, hocr_path)
     if thumbnail_key and thumbnail_path and thumbnail_content_type:
         upload_and_commit(
             args.base_url,
@@ -696,7 +738,8 @@ def cmd_ingest_book(args):
 
     # Mirror to local disk BEFORE publish so the PDF is on EFS
     # even if publish times out for large books (800+ files)
-    mirror_pdf_to_local_disk(pdf, record_id, pdf.name, book_dir=book_dir)
+    # Use parent_id so files persist across versions
+    mirror_pdf_to_local_disk(pdf, parent_id, pdf.name, book_dir=book_dir)
 
     # Mirror to Cantaloupe bucket
     mirrored = mirror_pdf_to_cantaloupe(pdf, args.book_id)
@@ -774,7 +817,8 @@ def main():
     p.add_argument("--base-url", default="https://127.0.0.1:5000")
     p.add_argument("--books-root")
     p.add_argument("--book-id")
-    p.add_argument("--include-hocr", action="store_true")
+    p.add_argument("--include-hocr", action="store_true", help="Include HOCR files (upload to record unless --mirror-hocr-only)")
+    p.add_argument("--mirror-hocr-only", action="store_true", help="Mirror HOCR to filesystem without uploading to record (requires --include-hocr)")
     p.add_argument("--id")
     p.add_argument("--filename")
     p.add_argument("--resource-type", default="publication-book", help="Resource type ID (e.g., publication-book)")
