@@ -1,18 +1,20 @@
 import os
 from bs4 import BeautifulSoup
 from flask import current_app
+from typing import Optional
 
-def extract_hocr_text(parent_id):
+def extract_hocr_text(parent_id: str) -> Optional[str]:
     """
-    Extract full text from HOCR files for a given parent ID.
-    Returns a single string containing all text from all pages.
+    Extract full text from HOCR files for a record (using parent_id for versioning).
+    
+    Args:
+        parent_id: The parent record ID to locate HOCR directory
+    
+    Returns:
+        Concatenated text from all HOCR files, or None if none found
     """
-    # Locate HOCR directory (keep in sync with signals.py HOCR_MOUNT_BASE)
-    base_path = os.environ.get(
-        'HOCR_MOUNT_BASE',
-        current_app.config.get('HOCR_MOUNT_PATH', os.path.abspath('hocr_mount')),
-    )
-    hocr_dir = os.path.join(base_path, parent_id, 'hocr')
+    hocr_mount_base = os.environ.get('HOCR_MOUNT_BASE', os.path.join(os.getcwd(), 'hocr_mount/books'))
+    hocr_dir = os.path.join(hocr_mount_base, parent_id, 'hocr')
     
     if not os.path.exists(hocr_dir):
         current_app.logger.warning(f"Fulltext extraction: HOCR dir not found at {hocr_dir}")
@@ -37,9 +39,9 @@ def extract_hocr_text(parent_id):
                     # Use html.parser (built-in, always available)
                     soup = BeautifulSoup(content, 'html.parser')
                     
-                    # Extract text, stripping tags but keeping spaces
-                    # We add a newline after each page to separate them
-                    page_text = soup.get_text(' ', strip=True)
+                    # Extract text from ocrx_word elements (handles XML namespaces correctly)
+                    words = soup.find_all(class_='ocrx_word')
+                    page_text = ' '.join(w.get_text(strip=True) for w in words) if words else ''
                     if page_text:
                         text_content.append(page_text)
                         current_app.logger.debug(f"Extracted {len(page_text)} chars from {filename}")

@@ -207,25 +207,28 @@ def create_api_blueprint(app):
 
             pid = PersistentIdentifier.get("recid", pid_value)
             record = RDMRecord.get_record(pid.object_uuid)
+            
+            # Use parent_id for filesystem paths (version-safe)
+            parent_id = record.parent.pid.pid_value
 
             hocr_count = sync_hocr_to_filesystem(record)
-            logger.info("Synced %d HOCR files for %s", hocr_count, pid_value)
+            logger.info("Synced %d HOCR files for %s (parent: %s)", hocr_count, pid_value, parent_id)
 
             pdf_mirrored = False
             try:
                 pdf_path = mirror_pdf_to_cantaloupe_filesystem(
-                    record, pid_value,
+                    record, parent_id,
                 )
                 pdf_mirrored = pdf_path is not None
                 if pdf_mirrored:
                     logger.info("Mirrored PDF to %s", pdf_path)
                     hocr_base = os.environ.get(
-                        "HOCR_MOUNT_BASE", "hocr_mount",
+                        "HOCR_MOUNT_BASE", "hocr_mount/books",
                     )
-                    hocr_dir = Path(hocr_base) / pid_value / "hocr"
+                    hocr_dir = Path(hocr_base) / parent_id / "hocr"
                     dims_file = (
                         get_cantaloupe_files_base()
-                        / pid_value
+                        / parent_id
                         / "dimensions.json"
                     )
                     create_dimensions_cache_from_hocr_dir(
@@ -249,7 +252,7 @@ def create_api_blueprint(app):
                     "pdf_mirrored": pdf_mirrored,
                 }), 200
 
-            fulltext = extract_hocr_text(pid_value)
+            fulltext = extract_hocr_text(parent_id)
             if not fulltext:
                 return jsonify({
                     "status": "ok",
