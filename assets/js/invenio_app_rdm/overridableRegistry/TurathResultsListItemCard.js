@@ -105,12 +105,43 @@ function getRecordThumbnailUrl(result) {
   return `${normalizedBaseUrl}/${encodedFileKey}/content`;
 }
 
+/**
+ * Extract the display query from the URL's 'q' parameter
+ */
+function getDisplayQueryFromUrl() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const qParam = urlParams.get('q');
+  
+  if (!qParam) {
+    return null;
+  }
+  
+  // Extract text from quoted phrase search
+  const quotedMatch = qParam.match(/"([^"]+)"/);
+  if (quotedMatch) {
+    return quotedMatch[1];
+  }
+  
+  // Remove wildcard asterisks that are used for metadata searches
+  // but don't make sense for HOCR full-text search
+  // Example: "*نجد*" becomes "نجد", "*تاريخ* *نجد*" becomes "تاريخ نجد"
+  return qParam.replace(/\*/g, '').trim();
+}
+
 export function TurathResultsListItemCard({ result, index }) {
   const metadata = result?.metadata || {};
   const title = metadata?.title || FALLBACK_TITLE;
   const creators = getCreators(metadata?.creators);
   const createdDate = getDate(metadata?.publication_date);
-  const viewLink = result?.links?.self_html;
+  
+  // Get base viewLink and append hocr_query if search term exists
+  let viewLink = result?.links?.self_html;
+  const displayQuery = getDisplayQueryFromUrl();
+  
+  if (viewLink && displayQuery) {
+    const separator = viewLink.includes('?') ? '&' : '?';
+    viewLink = `${viewLink}${separator}hocr_query=${encodeURIComponent(displayQuery)}`;
+  }
 
   const initial = getInitial(title);
   const thumbnailUrl = getRecordThumbnailUrl(result);

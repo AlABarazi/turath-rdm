@@ -1,0 +1,34 @@
+{#
+  Override of InvenioRDM files.html macro to pass hocr_query parameter to preview iframe
+#}
+
+{%- macro preview_file(preview_endpoint, pid_value, filename, is_preview, include_deleted, id='preview-iframe' ) %}
+  {%- set include_deleted_value = 0 -%}
+  {% if include_deleted %}
+    {%- set include_deleted_value = 1 -%}
+  {% endif %}
+  {% if is_preview %}
+    {%- set preview_url = url_for(preview_endpoint, pid_value=pid_value, filename=filename, preview=1, include_deleted=include_deleted_value) -%}
+  {% else %}
+    {%- set preview_url = url_for(preview_endpoint, pid_value=pid_value, filename=filename, include_deleted=include_deleted_value) -%}
+  {% endif %}
+  
+  {# Pass hocr_query parameter from parent URL to iframe #}
+  {%- if request.args.get('hocr_query') %}
+    {%- set hocr_query = request.args.get('hocr_query') %}
+    {%- if '?' in preview_url %}
+      {%- set preview_url = preview_url ~ '&hocr_query=' ~ hocr_query|urlencode %}
+    {%- else %}
+      {%- set preview_url = preview_url ~ '?hocr_query=' ~ hocr_query|urlencode %}
+    {%- endif %}
+  {%- endif %}
+  
+  <iframe
+    title="{{_('Preview')}}"
+    class="preview-iframe"
+    id="{{id}}"
+    name="{{id}}"
+    src="{{ preview_url }}"
+  >
+  </iframe>
+{%- endmacro %}
