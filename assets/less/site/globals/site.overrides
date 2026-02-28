@@ -453,6 +453,22 @@
    background-color: #d0d5d5 !important;
  }
 
+ .turath-record-edit {
+   background-color: #2185d0 !important;
+   color: white !important;
+   border-radius: 0 !important;
+   font-weight: 500;
+   margin-right: 10px !important;
+ }
+
+ .turath-record-edit:hover {
+   background-color: #1678c2 !important;
+ }
+
+ .turath-record-edit i.icon {
+   margin-right: 5px;
+ }
+
  .turath-record-viewer-container {
    flex-grow: 1;
    background-color: #dce1e1;

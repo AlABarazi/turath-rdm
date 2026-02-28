@@ -196,6 +196,13 @@
           </div>
 
           <div class="turath-record-action-buttons">
+            {% if permissions is defined and permissions.can_edit %}
+              <button class="ui button turath-record-edit" 
+                      id="turath-edit-record-btn"
+                      data-record-id="{{ record_ui['id'] }}">
+                <i class="edit icon"></i> {{ _('Edit Record') }}
+              </button>
+            {% endif %}
             {% if preview_download_url %}
               <a class="ui button turath-record-download" href="{{ preview_download_url }}">
                 {{ _('Download') }}
@@ -334,4 +341,70 @@
   {{ webpack['invenio-app-rdm-landing-page-theme.js'] }}
   {{ webpack['invenio-app-rdm-landing-page.js'] }}
   {{ webpack['previewer_theme.js'] }}
+
+  <script>
+    // Handle Edit Record button click (creates draft then redirects)
+    document.addEventListener('DOMContentLoaded', function() {
+      const editBtn = document.getElementById('turath-edit-record-btn');
+      if (editBtn) {
+        editBtn.addEventListener('click', async function() {
+          const recordId = this.getAttribute('data-record-id');
+          const button = this;
+          
+          // Show loading state
+          button.classList.add('loading');
+          button.disabled = true;
+          
+          // Get CSRF token from cookie
+          function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+              const cookies = document.cookie.split(';');
+              for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                  cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                  break;
+                }
+              }
+            }
+            return cookieValue;
+          }
+          
+          try {
+            // Create draft via API (same as InvenioRDM EditButton)
+            const csrfToken = getCsrfToken();
+            const response = await fetch(`/api/records/${recordId}/draft`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/vnd.inveniordm.v1+json',
+                'X-CSRFToken': csrfToken
+              },
+              credentials: 'same-origin',
+              body: JSON.stringify({})
+            });
+            
+            if (response.ok) {
+              // Redirect to edit page
+              window.location = `/uploads/${recordId}`;
+            } else {
+              // Handle error
+              const data = await response.json();
+              console.error('Error creating draft:', data);
+              alert('Error: ' + (data.message || 'Could not create draft'));
+              button.classList.remove('loading');
+              button.disabled = false;
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            alert('Error creating draft. Please try again.');
+            button.classList.remove('loading');
+            button.disabled = false;
+          }
+        });
+      }
+    });
+  </script>
 {%- endblock javascript %}
