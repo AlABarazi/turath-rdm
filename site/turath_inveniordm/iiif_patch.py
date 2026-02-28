@@ -214,8 +214,9 @@ def patch_iiif_manifest_schema():
         hocr_page_count = max(page_nums) if page_nums else 0
 
         # Use parent_id for Cantaloupe identifier to match filesystem storage
+        # Format: parent_id!filename - Cantaloupe's slash_substitute=! converts to parent_id/filename
         cantaloupe_id = parent_id if parent_id else record_pid
-        enc_id = quote(f"{cantaloupe_id}!{pdf_key}", safe="!")
+        enc_id = f"{cantaloupe_id}!{pdf_key}"
 
         # Load dimensions cache (generated during PDF mirroring)
         cached_dims = []
@@ -285,14 +286,8 @@ def patch_iiif_manifest_schema():
                         "label": f"Text of page {pstr}",
                     }
                 ],
-                "seeAlso": [
-                    {
-                        "@id": f"{app_base}/records/{record_pid}/files/{pstr}.hocr",
-                        "format": "text/vnd.hocr+html",
-                        "profile": "http://kba.github.io/hocr-spec/1.2/",
-                        "label": "HOCR OCR text",
-                    }
-                ],
+                # Note: seeAlso removed - HOCR files are not uploaded to record.files
+                # Text overlay is served via otherContent annotations from search service
             }
             canvases.append(canvas)
 

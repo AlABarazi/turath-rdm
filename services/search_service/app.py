@@ -20,14 +20,22 @@ CORS(app)
 # Configuration
 HOCR_BASE_DIR = os.environ.get('HOCR_BASE_DIR', '/hocr_mount/books')
 SEARCH_SERVICE_BASE_URL = os.environ.get('SEARCH_SERVICE_BASE_URL', 'https://127.0.0.1:5001')
+
+# Backward compatible: support both old (IIIF_SERVER_BASE_URL) and new env vars
+# Production uses IIIF_SERVER_BASE_URL, local dev can override with APP_BASE_URL/CANVAS_BASE_URL
 IIIF_SERVER_BASE_URL = os.environ.get('IIIF_SERVER_BASE_URL', 'https://127.0.0.1:5000')
+# APP_BASE_URL: For Docker → InvenioRDM API calls (may use host.docker.internal in local dev)
+APP_BASE_URL = os.environ.get('APP_BASE_URL', IIIF_SERVER_BASE_URL)
+# CANVAS_BASE_URL: For browser-facing canvas URIs (must use 127.0.0.1 for browser in local dev)
+CANVAS_BASE_URL = os.environ.get('CANVAS_BASE_URL', IIIF_SERVER_BASE_URL)
+
 MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 4))
 
 def get_parent_id(record_pid):
     """Resolve record_pid to parent_id by querying InvenioRDM API."""
     try:
-        url = f"{IIIF_SERVER_BASE_URL}/api/records/{record_pid}"
-        response = requests.get(url, verify=False, timeout=5)
+        url = f"{APP_BASE_URL}/api/records/{record_pid}"
+        response = requests.get(url, verify=False, timeout=30)
         if response.status_code == 200:
             data = response.json()
             parent_id = data.get('parent', {}).get('id')
@@ -229,7 +237,7 @@ def annotations(record_pid, page_id):
     words = parse_hocr_words(file_path)
     
     resources = []
-    canvas_id = f"{IIIF_SERVER_BASE_URL}/records/{record_pid}/canvas/{page_id}"
+    canvas_id = f"{CANVAS_BASE_URL}/records/{record_pid}/canvas/{page_id}"
     
     for i, word in enumerate(words):
         annotation_id = f"{SEARCH_SERVICE_BASE_URL}/annotations/{record_pid}/{page_id}/{i}"
@@ -298,7 +306,8 @@ def search(record_pid):
     for i, match in enumerate(all_matches):
         page_num = match['page']
         # Format: p001, p002, etc. to match InvenioRDM canvas IDs
-        canvas_id = f"{IIIF_SERVER_BASE_URL}/records/{record_pid}/canvas/p{page_num:03d}"
+        # CRITICAL: Use CANVAS_BASE_URL for browser-accessible URIs to match manifest
+        canvas_id = f"{CANVAS_BASE_URL}/records/{record_pid}/canvas/p{page_num:03d}"
         annotation_id = f"{SEARCH_SERVICE_BASE_URL}/annotations/{record_pid}/{page_num}/{i}"
         
         # Annotation (the box on the image)
@@ -320,6 +329,11 @@ def search(record_pid):
             "match": match['text'],
             "before": match['context'].split("<span")[0],
             "after": match['context'].split("</span>")[1],
+            "selectors": [{
+                "@type": "oa:FragmentSelector",
+                "value": f"xywh={match['bbox']}"
+            }],
+            "on": canvas_id,  # ← ADD THIS: tells Mirador which canvas to jump to
             "isMatching": True
         })
 

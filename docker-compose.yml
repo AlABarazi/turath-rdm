@@ -67,6 +67,7 @@ services:
     environment:
       - HOCR_BASE_DIR=/hocr_mount/books
       - SEARCH_SERVICE_BASE_URL=https://127.0.0.1:5001
-      - IIIF_SERVER_BASE_URL=https://host.docker.internal:5000
+      - APP_BASE_URL=https://host.docker.internal:5000
+      - CANVAS_BASE_URL=https://127.0.0.1:5000
 volumes:
   data:

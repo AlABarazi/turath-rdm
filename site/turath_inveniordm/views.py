@@ -41,11 +41,23 @@ def create_blueprint(app):
         version, rest = path.split("/", 1)
 
         # Extract identifier and operation part robustly.
-        # The identifier is a URL (http/https) and may contain many '/'.
-        # We detect operation by known prefixes: '/info.json' or '/full/'.
+        # The identifier may use Cantaloupe's ;page syntax (e.g., identifier;5 for page 5)
+        # We detect operation by known prefixes: '/info.json' or region/size patterns.
         id_raw = rest
         op_part = ""
-        if "/info.json" in rest:
+        
+        # Handle Cantaloupe's semicolon page syntax first (identifier;N/...)
+        # This prevents misinterpreting region coordinates as identifier parts
+        if ";" in rest and "/" in rest:
+            semi_idx = rest.find(";")
+            slash_after_semi = rest.find("/", semi_idx)
+            # Check if there's a number between ; and /
+            potential_page = rest[semi_idx+1:slash_after_semi]
+            if potential_page.isdigit():
+                # This is identifier;page/operation format
+                id_raw = rest[:slash_after_semi]
+                op_part = rest[slash_after_semi+1:]
+        elif "/info.json" in rest:
             idx = rest.rfind("/info.json")
             before = rest[:idx]
             # Determine if a page prefix exists just before info.json (e.g., /p2/info.json)
@@ -81,7 +93,7 @@ def create_blueprint(app):
             else:
                 id_raw, op_part = rest, ""
 
-        encoded_id = quote(unquote(id_raw), safe="!")
+        encoded_id = quote(unquote(id_raw), safe="!;")
 
         # Support page-qualified routes like .../{encoded_id}/p{N}/... by mapping to upstream ?page=N
         page_param = None

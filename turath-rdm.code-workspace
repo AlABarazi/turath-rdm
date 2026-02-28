@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../inveniordm-terraform-feature-deployment-scripts-and-docs"
+		},
+		{
+			"path": "../../inveniordm-terraform"
 		}
 	],
 	"settings": {

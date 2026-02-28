@@ -93,9 +93,9 @@ def prewarm_iiif_cache(parent_id: str, pdf_filename: str, page_count: int, base_
     print(f"\n  🔥 Pre-warming {strategy_name} pages...")
     
     # Build IIIF identifier for FilesystemSource
-    # Format: /iiif/2/{parent_id}_{pdf_filename}/p{page}/full/400,/0/default.jpg
-    # Cantaloupe FilesystemSource will resolve this to: /cantaloupe-files/{parent_id}/{pdf_filename}
-    iiif_identifier = f"{parent_id}_{pdf_filename}"
+    # Format: /iiif/2/{parent_id}!{pdf_filename}/p{page}/full/400,/0/default.jpg
+    # Cantaloupe's slash_substitute=! converts to: /cantaloupe-files/{parent_id}/{pdf_filename}
+    iiif_identifier = f"{parent_id}!{pdf_filename}"
     
     start_time = time.time()
     warmed = 0
