@@ -110,8 +110,17 @@ def patch_iiif_manifest_schema():
         # Fetch record files metadata from REST API to find the PDF & HOCR files
         pdf_key = None
         hocr_keys = []
+        parent_id = None
+        
+        # Get parent_id early for filesystem operations
         try:
-            record_dir = get_cantaloupe_files_base() / record_pid
+            record = RDMRecord.pid.resolve(record_pid)
+            parent_id = record.parent.pid.pid_value
+        except Exception:
+            pass
+        
+        try:
+            record_dir = get_cantaloupe_files_base() / (parent_id or record_pid)
             if record_dir.exists():
                 pdf_paths = sorted(
                     p
@@ -155,7 +164,11 @@ def patch_iiif_manifest_schema():
 
         if not pdf_key or not hocr_keys:
             try:
-                record = RDMRecord.pid.resolve(record_pid)
+                if not parent_id:
+                    record = RDMRecord.pid.resolve(record_pid)
+                    parent_id = record.parent.pid.pid_value
+                else:
+                    record = RDMRecord.pid.resolve(record_pid)
                 if record.files.enabled:
                     for file_key in record.files.entries.keys():
                         file_key_l = file_key.lower()
@@ -186,8 +199,8 @@ def patch_iiif_manifest_schema():
                 current_app.config.get("HOCR_MOUNT_BASE")
                 or os.environ.get("HOCR_MOUNT_BASE")
             )
-            if hocr_mount_base:
-                hocr_dir = Path(hocr_mount_base) / record_pid / "hocr"
+            if hocr_mount_base and parent_id:
+                hocr_dir = Path(hocr_mount_base) / parent_id / "hocr"
                 for hocr_path in hocr_dir.glob("*.hocr"):
                     m = re.search(r"(\d{3})\.hocr$", hocr_path.name)
                     if not m:
@@ -200,12 +213,14 @@ def patch_iiif_manifest_schema():
             pass
         hocr_page_count = max(page_nums) if page_nums else 0
 
-        enc_id = quote(f"{record_pid}!{pdf_key}", safe="!")
+        # Use parent_id for Cantaloupe identifier to match filesystem storage
+        cantaloupe_id = parent_id if parent_id else record_pid
+        enc_id = quote(f"{cantaloupe_id}!{pdf_key}", safe="!")
 
         # Load dimensions cache (generated during PDF mirroring)
         cached_dims = []
         try:
-            dims_path = get_cantaloupe_files_base() / record_pid / "dimensions.json"
+            dims_path = get_cantaloupe_files_base() / (parent_id or record_pid) / "dimensions.json"
             if dims_path.exists():
                 with open(dims_path, "r") as f:
                     cached_dims = json.load(f)

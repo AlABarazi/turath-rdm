@@ -2,6 +2,7 @@
 import os
 import logging
 import glob
+import requests
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 from bs4 import BeautifulSoup
@@ -22,15 +23,38 @@ SEARCH_SERVICE_BASE_URL = os.environ.get('SEARCH_SERVICE_BASE_URL', 'https://127
 IIIF_SERVER_BASE_URL = os.environ.get('IIIF_SERVER_BASE_URL', 'https://127.0.0.1:5000')
 MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 4))
 
+def get_parent_id(record_pid):
+    """Resolve record_pid to parent_id by querying InvenioRDM API."""
+    try:
+        url = f"{IIIF_SERVER_BASE_URL}/api/records/{record_pid}"
+        response = requests.get(url, verify=False, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            parent_id = data.get('parent', {}).get('id')
+            if parent_id:
+                logger.info(f"Resolved {record_pid} -> parent_id: {parent_id}")
+                return parent_id
+        logger.warning(f"Failed to resolve parent_id for {record_pid}, using record_pid as fallback")
+    except Exception as e:
+        logger.error(f"Error resolving parent_id for {record_pid}: {e}")
+    
+    # Fallback to record_pid if resolution fails
+    return record_pid
+
 def get_hocr_files(record_pid):
-    """Get sorted list of HOCR files for a record."""
-    record_dir = os.path.join(HOCR_BASE_DIR, record_pid, 'hocr')
+    """Get sorted list of HOCR files for a record (using parent_id)."""
+    parent_id = get_parent_id(record_pid)
+    record_dir = os.path.join(HOCR_BASE_DIR, parent_id, 'hocr')
+    logger.info(f"Looking for HOCR files at: {record_dir}")
+    
     if not os.path.exists(record_dir):
+        logger.warning(f"HOCR directory not found: {record_dir}")
         return []
     
     files = glob.glob(os.path.join(record_dir, '*.hocr'))
     # Sort by filename (assuming 001.hocr, 002.hocr, etc.)
     files.sort()
+    logger.info(f"Found {len(files)} HOCR files for {record_pid} (parent: {parent_id})")
     return files
 
 def parse_hocr_file_wrapper(args):
@@ -186,14 +210,16 @@ def annotations(record_pid, page_id):
     except:
         abort(400, "Invalid page_id format. Expected pXXX (e.g., p001)")
 
-    file_path = os.path.join(HOCR_BASE_DIR, record_pid, 'hocr', filename)
-    logger.info(f"Looking for annotation file: {file_path}")
+    # Resolve to parent_id for filesystem lookup
+    parent_id = get_parent_id(record_pid)
+    file_path = os.path.join(HOCR_BASE_DIR, parent_id, 'hocr', filename)
+    logger.info(f"Looking for annotation file: {file_path} (record: {record_pid}, parent: {parent_id})")
     
     if not os.path.exists(file_path):
         # Try finding file without zero padding if strict match failed
         logger.warning(f"File not found at {file_path}. Checking directory content...")
         try:
-            dir_path = os.path.join(HOCR_BASE_DIR, record_pid, 'hocr')
+            dir_path = os.path.join(HOCR_BASE_DIR, parent_id, 'hocr')
             if os.path.exists(dir_path):
                 logger.info(f"Directory content: {os.listdir(dir_path)}")
         except:

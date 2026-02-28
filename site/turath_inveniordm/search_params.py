@@ -23,6 +23,6 @@ class ExcludeFulltextSourceParam(ParamInterpreter):
         """Remove fulltext from _source in search results."""
         return search.source(
             excludes=[
-                "custom_fields.turath:fulltext",
+                "custom_fields.turath:fulltext"
             ],
         )
