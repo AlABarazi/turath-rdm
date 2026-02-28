@@ -768,8 +768,8 @@ def cmd_ingest_book(args):
     if hocr_files:
         trigger_fulltext_indexing(args.base_url, token, record_id)
     
-    # Return record_id for use by calling scripts
-    return record_id
+    # Return both record_id and parent_id for use by calling scripts
+    return {"record_id": record_id, "parent_id": parent_id}
 
 
 def cmd_get(args):

@@ -44,7 +44,7 @@ from typing import List, Dict, Optional
 from urllib.parse import quote
 
 # Add scripts directory to path to import records_crud
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import from records_crud.py
 import records_crud
@@ -65,12 +65,12 @@ def get_all_books(books_root: Path) -> List[str]:
     return books
 
 
-def prewarm_iiif_cache(record_id: str, pdf_filename: str, page_count: int, base_url: str, prewarm_pages: int = 0, prewarm_tiles: bool = True) -> Dict:
+def prewarm_iiif_cache(parent_id: str, pdf_filename: str, page_count: int, base_url: str, prewarm_pages: int = 0, prewarm_tiles: bool = True) -> Dict:
     """
     Pre-warm Cantaloupe cache by requesting pages from IIIF server.
     
     Args:
-        record_id: Record PID (e.g., 'e47tg-g9m93')
+        parent_id: Parent record ID (e.g., 'xbec4-9dx70') for stable filesystem path
         pdf_filename: PDF filename (e.g., '003_تحفة_المشتاق.pdf')
         page_count: Total number of pages in the book
         base_url: InvenioRDM base URL
@@ -92,10 +92,10 @@ def prewarm_iiif_cache(record_id: str, pdf_filename: str, page_count: int, base_
     
     print(f"\n  🔥 Pre-warming {strategy_name} pages...")
     
-    # Build the encoded PDF URL for IIIF
-    # Format: /iiif/2/{ENCODED_PDF_URL}/p{page}/full/400,/0/default.jpg
-    pdf_url = f"https://host.docker.internal:5000/records/{record_id}/files/{pdf_filename}"
-    encoded_pdf_url = quote(pdf_url, safe='')
+    # Build IIIF identifier for FilesystemSource
+    # Format: /iiif/2/{parent_id}_{pdf_filename}/p{page}/full/400,/0/default.jpg
+    # Cantaloupe FilesystemSource will resolve this to: /cantaloupe-files/{parent_id}/{pdf_filename}
+    iiif_identifier = f"{parent_id}_{pdf_filename}"
     
     start_time = time.time()
     warmed = 0
@@ -117,7 +117,7 @@ def prewarm_iiif_cache(record_id: str, pdf_filename: str, page_count: int, base_
             
             for x, y in tile_coords:
                 try:
-                    url = f"{base_url}/iiif/2/{encoded_pdf_url}/p{page}/{x},{y},512,512/512,/0/default.jpg"
+                    url = f"{base_url}/iiif/2/{iiif_identifier}/p{page}/{x},{y},512,512/512,/0/default.jpg"
                     response = requests.get(url, verify=False, timeout=30)
                     if response.status_code == 200:
                         page_tiles_warmed += 1
@@ -127,7 +127,7 @@ def prewarm_iiif_cache(record_id: str, pdf_filename: str, page_count: int, base_
         else:
             # Simple mode: just pre-warm first tile to trigger processing
             try:
-                url = f"{base_url}/iiif/2/{encoded_pdf_url}/p{page}/0,0,512,512/512,/0/default.jpg"
+                url = f"{base_url}/iiif/2/{iiif_identifier}/p{page}/0,0,512,512/512,/0/default.jpg"
                 response = requests.get(url, verify=False, timeout=30)
                 
                 if response.status_code == 200:
@@ -199,13 +199,16 @@ def upload_book(args, book_id: str, book_info: Dict) -> Dict:
             self.book_id = book_id
             self.base_url = args.base_url
             self.include_hocr = args.include_hocr
+            self.mirror_hocr_only = args.mirror_hocr_only
             self.resource_type = "publication-book"
     
     book_args = BookArgs()
     
     try:
-        # Call the ingest function from records_crud (returns record_id)
-        record_id = records_crud.cmd_ingest_book(book_args)
+        # Call the ingest function from records_crud (returns dict with record_id and parent_id)
+        result = records_crud.cmd_ingest_book(book_args)
+        record_id = result["record_id"]
+        parent_id = result["parent_id"]
         
         # Pre-warm cache if requested
         prewarm_result = None
@@ -219,7 +222,7 @@ def upload_book(args, book_id: str, book_info: Dict) -> Dict:
                     pdf = pdf_files[0]
             
             prewarm_result = prewarm_iiif_cache(
-                record_id=record_id,
+                parent_id=parent_id,
                 pdf_filename=pdf.name,
                 page_count=book_info['hocr_count'],
                 base_url=args.base_url,
@@ -246,6 +249,7 @@ def main():
     parser.add_argument("--books-root", required=True, help="Path to renamed_books directory")
     parser.add_argument("--base-url", default="https://127.0.0.1:5000", help="InvenioRDM base URL")
     parser.add_argument("--include-hocr", action="store_true", help="Upload HOCR files")
+    parser.add_argument("--mirror-hocr-only", action="store_true", help="Mirror HOCR to filesystem without uploading to record (requires --include-hocr)")
     parser.add_argument("--book-ids", nargs="+", help="Specific book IDs to upload (default: all)")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be uploaded without uploading")
     parser.add_argument("--skip-errors", action="store_true", default=True, help="Continue on errors (default: True)")
@@ -282,6 +286,7 @@ def main():
     print(f"{'='*80}")
     print(f"Target: {args.base_url}")
     print(f"Include HOCR: {args.include_hocr}")
+    print(f"Mirror HOCR only: {args.mirror_hocr_only} (no HOCR in record.files)" if args.mirror_hocr_only else f"Mirror HOCR only: False")
     print(f"Pre-warm: {'None' if args.prewarm_pages == 0 else f'First {args.prewarm_pages}' if args.prewarm_pages > 0 else 'All pages'}")
     print(f"Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
     print(f"\nBooks to upload:")

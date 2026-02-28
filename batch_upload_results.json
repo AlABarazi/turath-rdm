@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-02-28T14:25:10.403989",
+  "total_duration_seconds": 16.103282,
+  "total_books": 2,
+  "successful": 2,
+  "failed": 0,
+  "results": [
+    {
+      "success": true,
+      "record_id": "4yaj1-3ws09",
+      "error": null,
+      "prewarm_result": {
+        "pages_warmed": 0,
+        "duration": 3.1726770401000977,
+        "errors": []
+      },
+      "book_id": "047_تحفة_الأعيان_بسيرة_أهل_عمان__ج2",
+      "duration": 6.855835
+    },
+    {
+      "success": true,
+      "record_id": "cxe6b-n5e89",
+      "error": null,
+      "prewarm_result": {
+        "pages_warmed": 0,
+        "duration": 3.0416057109832764,
+        "errors": []
+      },
+      "book_id": "055_تاريخ_ابن_غنام__ج2",
+      "duration": 9.247402
+    }
+  ]
+}
