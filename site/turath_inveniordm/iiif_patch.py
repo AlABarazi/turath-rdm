@@ -184,60 +184,76 @@ def patch_iiif_manifest_schema():
             # No PDF found; nothing to do
             return manifest
 
-        # Determine page count: prefer HOCR count, fallback to dimensions.json, then 1
-        page_nums = []
-        for key in hocr_keys:
-            m = re.search(r"(\d{3})\.hocr$", key)
-            if m:
-                try:
-                    page_nums.append(int(m.group(1)))
-                except Exception:
-                    continue
+        cantaloupe_id = parent_id if parent_id else record_pid
+        record_dir = get_cantaloupe_files_base() / (parent_id or record_pid)
 
+        # ---------------------------------------------------------------
+        # Determine whether pre-rendered page images exist.
+        # If pages/ contains .jpg files we serve those (Java2dProcessor,
+        # no tiling artefacts). Otherwise fall back to the PDF identifier
+        # with PdfBoxProcessor for old records that haven't been re-synced.
+        # ---------------------------------------------------------------
+        pages_dir = record_dir / "pages"
+        page_image_files: list = []
         try:
-            hocr_mount_base = (
-                current_app.config.get("HOCR_MOUNT_BASE")
-                or os.environ.get("HOCR_MOUNT_BASE")
-            )
-            if hocr_mount_base and parent_id:
-                hocr_dir = Path(hocr_mount_base) / parent_id / "hocr"
-                for hocr_path in hocr_dir.glob("*.hocr"):
-                    m = re.search(r"(\d{3})\.hocr$", hocr_path.name)
-                    if not m:
-                        continue
-                    try:
-                        page_nums.append(int(m.group(1)))
-                    except Exception:
-                        continue
+            if pages_dir.is_dir():
+                page_image_files = sorted(
+                    p for p in pages_dir.iterdir()
+                    if p.suffix.lower() == ".jpg"
+                )
         except Exception:
             pass
-        hocr_page_count = max(page_nums) if page_nums else 0
 
-        # Use parent_id for Cantaloupe identifier to match filesystem storage
-        # Format: parent_id!filename - Cantaloupe's slash_substitute=! converts to parent_id/filename
-        cantaloupe_id = parent_id if parent_id else record_pid
-        enc_id = f"{cantaloupe_id}!{pdf_key}"
+        use_page_images = bool(page_image_files)
 
-        # Load dimensions cache (generated during PDF mirroring)
+        # Load dimensions cache (generated during PDF-to-image conversion or HOCR)
         cached_dims = []
         try:
-            dims_path = get_cantaloupe_files_base() / (parent_id or record_pid) / "dimensions.json"
+            dims_path = record_dir / "dimensions.json"
             if dims_path.exists():
                 with open(dims_path, "r") as f:
                     cached_dims = json.load(f)
         except Exception:
             pass
 
-        page_count = max(hocr_page_count, len(cached_dims), 1)
+        if use_page_images:
+            page_count = len(page_image_files)
+        else:
+            # Fallback: count from HOCR or dimensions.json
+            page_nums = []
+            for key in hocr_keys:
+                m = re.search(r"(\d{3})\.hocr$", key)
+                if m:
+                    try:
+                        page_nums.append(int(m.group(1)))
+                    except Exception:
+                        continue
 
-        # Helper to fetch per-page dimensions
+            try:
+                hocr_mount_base = (
+                    current_app.config.get("HOCR_MOUNT_BASE")
+                    or os.environ.get("HOCR_MOUNT_BASE")
+                )
+                if hocr_mount_base and parent_id:
+                    hocr_dir = Path(hocr_mount_base) / parent_id / "hocr"
+                    for hocr_path in hocr_dir.glob("*.hocr"):
+                        m = re.search(r"(\d{3})\.hocr$", hocr_path.name)
+                        if not m:
+                            continue
+                        try:
+                            page_nums.append(int(m.group(1)))
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            hocr_page_count = max(page_nums) if page_nums else 0
+            page_count = max(hocr_page_count, len(cached_dims), 1)
+
         def get_dims(page: int):
-            # Use cached dimensions if available (page is 1-indexed)
             if cached_dims and 0 <= page - 1 < len(cached_dims):
                 d = cached_dims[page - 1]
                 return d["w"], d["h"]
-            
-            # Fallback to standard A4 if no cache (fast but maybe misaligned)
             return 1240, 1754
 
         # Construct sequence and canvases
@@ -248,9 +264,18 @@ def patch_iiif_manifest_schema():
             w, h = get_dims(page)
             pstr = f"{page:03d}"
             canvas_uri = f"{app_base}/records/{record_pid}/canvas/p{pstr}"
-            # Cantaloupe meta-identifier: identifier;pageNumber (1-indexed)
-            # ALB routes /iiif/* directly to Cantaloupe which understands this
-            page_service_base = f"{app_base}/iiif/2/{enc_id};{page}"
+
+            if use_page_images:
+                # Image identifier: parent_id!pages!001.jpg
+                # Cantaloupe slash_substitute=! maps to: parent_id/pages/001.jpg
+                # Java2dProcessor serves JPEG natively — no tiling artefacts
+                enc_id = f"{cantaloupe_id}!pages!{pstr}.jpg"
+                page_service_base = f"{app_base}/iiif/2/{enc_id}"
+            else:
+                # Legacy PDF identifier with page number suffix
+                enc_id = f"{cantaloupe_id}!{pdf_key}"
+                page_service_base = f"{app_base}/iiif/2/{enc_id};{page}"
+
             image_api_id = f"{page_service_base}/full/full/0/default.jpg"
             image_service_id = page_service_base
 

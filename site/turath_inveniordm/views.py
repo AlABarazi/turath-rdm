@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
 import requests
@@ -211,47 +210,28 @@ def create_api_blueprint(app):
             from invenio_db import db
             from .signals import sync_hocr_to_filesystem
             from .fulltext import extract_hocr_text
-            from .cantaloupe_mirror import (
-                mirror_pdf_to_cantaloupe_filesystem,
-                create_dimensions_cache_from_hocr_dir,
-                get_cantaloupe_files_base,
-            )
+            from .cantaloupe_mirror import mirror_pdf_pages_to_cantaloupe_filesystem
 
             pid = PersistentIdentifier.get("recid", pid_value)
             record = RDMRecord.get_record(pid.object_uuid)
-            
+
             # Use parent_id for filesystem paths (version-safe)
             parent_id = record.parent.pid.pid_value
 
             hocr_count = sync_hocr_to_filesystem(record)
             logger.info("Synced %d HOCR files for %s (parent: %s)", hocr_count, pid_value, parent_id)
 
-            pdf_mirrored = False
+            pages_mirrored = False
             try:
-                pdf_path = mirror_pdf_to_cantaloupe_filesystem(
+                pages_dir = mirror_pdf_pages_to_cantaloupe_filesystem(
                     record, parent_id,
                 )
-                pdf_mirrored = pdf_path is not None
-                if pdf_mirrored:
-                    logger.info("Mirrored PDF to %s", pdf_path)
-                    hocr_base = os.environ.get(
-                        "HOCR_MOUNT_BASE", "hocr_mount/books",
-                    )
-                    hocr_dir = Path(hocr_base) / parent_id / "hocr"
-                    dims_file = (
-                        get_cantaloupe_files_base()
-                        / parent_id
-                        / "dimensions.json"
-                    )
-                    create_dimensions_cache_from_hocr_dir(
-                        hocr_dir, dims_file,
-                    )
-                    logger.info(
-                        "Created dimensions cache for %s", pid_value,
-                    )
+                pages_mirrored = pages_dir is not None
+                if pages_mirrored:
+                    logger.info("Converted PDF pages to %s", pages_dir)
             except Exception as mirror_exc:
                 logger.error(
-                    "PDF mirror/dimensions failed for %s: %s",
+                    "PDF page conversion failed for %s: %s",
                     pid_value, mirror_exc,
                 )
 

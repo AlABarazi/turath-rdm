@@ -13,6 +13,9 @@ HOCR_PAGE_BBOX_PATTERN = re.compile(
     re.DOTALL,
 )
 
+# DPI used when rendering PDF pages to JPEG images
+PDF_RENDER_DPI = 150
+
 
 def get_cantaloupe_files_base() -> Path:
     base = os.environ.get("CANTALOUPE_FILES_BASE")
@@ -79,7 +82,25 @@ def cleanup_cantaloupe_record_dir(parent_id: str) -> None:
         shutil.rmtree(record_dir)
 
 
-def mirror_pdf_to_cantaloupe_filesystem(record, record_pid: str) -> Optional[Path]:
+def mirror_pdf_pages_to_cantaloupe_filesystem(
+    record, record_pid: str
+) -> Optional[Path]:
+    """
+    Convert a record's PDF into per-page JPEG images and save them to the
+    Cantaloupe filesystem at:
+
+        cantaloupe-files/{parent_id}/pages/001.jpg
+        cantaloupe-files/{parent_id}/pages/002.jpg
+        ...
+
+    A dimensions.json cache is written to cantaloupe-files/{parent_id}/
+    with the actual pixel dimensions of each rendered page.
+
+    Cantaloupe's Java2dProcessor serves JPEG files natively without the
+    tiling artifacts caused by PdfBoxProcessor on PDF sources.
+
+    Returns the pages directory Path on success, or None if no PDF is found.
+    """
     if not record.files.enabled:
         return None
 
@@ -92,15 +113,47 @@ def mirror_pdf_to_cantaloupe_filesystem(record, record_pid: str) -> Optional[Pat
     if not pdf_key:
         return None
 
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        raise RuntimeError(
+            "PyMuPDF (pymupdf) is required for PDF-to-image conversion. "
+            "Install it with: pipenv install pymupdf"
+        )
+
     parent_id = record.parent.pid.pid_value
     base_dir = get_cantaloupe_files_base()
     record_dir = base_dir / parent_id
-    record_dir.mkdir(parents=True, exist_ok=True)
+    pages_dir = record_dir / "pages"
 
-    target_pdf_path = record_dir / pdf_key
+    # Clear any existing pages so stale images don't linger after a re-publish
+    if pages_dir.exists():
+        shutil.rmtree(pages_dir)
+    pages_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read the PDF from record storage (S3 / MinIO) into memory
     file_obj = record.files[pdf_key]
     with file_obj.get_stream("rb") as source:
-        with open(target_pdf_path, "wb") as target:
-            shutil.copyfileobj(source, target)
+        pdf_bytes = source.read()
 
-    return target_pdf_path
+    # Render each page at PDF_RENDER_DPI and save as JPEG
+    scale = PDF_RENDER_DPI / 72.0
+    mat = fitz.Matrix(scale, scale)
+
+    dims: List[Dict[str, int]] = []
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+        for page_index in range(len(pdf_doc)):
+            page = pdf_doc.load_page(page_index)
+            pix = page.get_pixmap(matrix=mat)
+
+            page_filename = f"{page_index + 1:03d}.jpg"
+            pix.save(str(pages_dir / page_filename))
+
+            dims.append({"w": pix.width, "h": pix.height})
+
+    # Write dimensions cache from actual rendered image sizes
+    dims_file = record_dir / "dimensions.json"
+    dims_file.write_text(json.dumps(dims), encoding="utf-8")
+
+    return pages_dir

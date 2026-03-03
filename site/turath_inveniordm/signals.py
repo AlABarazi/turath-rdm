@@ -8,7 +8,6 @@ import os
 import shutil
 import logging
 from contextvars import ContextVar
-from pathlib import Path
 
 from invenio_rdm_records.records.api import RDMRecord
 from invenio_rdm_records.proxies import current_rdm_records_service
@@ -20,9 +19,7 @@ from invenio_records.signals import (
 
 from .cantaloupe_mirror import (
     cleanup_cantaloupe_record_dir,
-    create_dimensions_cache_from_hocr_dir,
-    get_cantaloupe_files_base,
-    mirror_pdf_to_cantaloupe_filesystem,
+    mirror_pdf_pages_to_cantaloupe_filesystem,
 )
 from .fulltext import extract_hocr_text
 
@@ -218,20 +215,10 @@ def comprehensive_hocr_handler(sender, record=None, **kwargs):
             logger.info(f"ℹ️ Record {record_pid} has no HOCR files")
         try:
             parent_id = record.parent.pid.pid_value
-            mirror_pdf_to_cantaloupe_filesystem(record, record_pid)
-            hocr_dir = os.path.join(HOCR_MOUNT_BASE, parent_id, 'hocr')
-            dims_file = (
-                get_cantaloupe_files_base()
-                / parent_id
-                / "dimensions.json"
-            )
-            create_dimensions_cache_from_hocr_dir(
-                Path(hocr_dir),
-                dims_file,
-            )
+            mirror_pdf_pages_to_cantaloupe_filesystem(record, record_pid)
         except Exception as e:
             logger.error(
-                "❌ Failed to mirror PDF/dimensions for %s: %s",
+                "❌ Failed to convert PDF pages for %s: %s",
                 record_pid,
                 e,
             )
