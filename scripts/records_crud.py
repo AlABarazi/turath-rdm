@@ -494,6 +494,99 @@ def upload_hocr_via_api(
     return success
 
 
+def upload_images_via_api(
+    base_url: str,
+    token: str,
+    parent_id: str,
+    images_dir: Path,
+    max_workers: int = 8,
+) -> int:
+    """
+    Convert images (TIF/JPG/PNG/etc.) to JPEG and upload directly to the
+    server's Cantaloupe filesystem via PUT /api/pages/<parent_id>/<filename>.
+
+    Also uploads dimensions.json after all pages are converted.
+    Returns the number of successfully uploaded page images.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import io
+    import json as _json
+    try:
+        from PIL import Image
+    except ImportError:
+        raise RuntimeError("Pillow is required. Install with: pip install Pillow")
+
+    image_extensions = {".tif", ".tiff", ".jpg", ".jpeg", ".png"}
+    image_files = sorted([
+        f for f in images_dir.iterdir()
+        if f.suffix.lower() in image_extensions
+    ])
+
+    if not image_files:
+        print(f"[images-api] No image files found in {images_dir}")
+        return 0
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/octet-stream",
+    }
+    dimensions = [None] * len(image_files)
+
+    def _convert_and_upload(idx_path):
+        idx, img_path = idx_path
+        filename = f"{idx + 1:03d}.jpg"
+        url = f"{base_url}/api/pages/{parent_id}/{filename}"
+        try:
+            with Image.open(img_path) as img:
+                width, height = img.size
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=85)
+                jpeg_bytes = buf.getvalue()
+            resp = requests.put(url, data=jpeg_bytes, headers=headers, verify=False, timeout=60)
+            if resp.status_code == 200:
+                dimensions[idx] = {"w": width, "h": height}
+                return True
+            print(f"[images-api] ✗ {filename}: HTTP {resp.status_code}")
+            return False
+        except Exception as exc:
+            print(f"[images-api] ✗ {filename}: {exc}")
+            return False
+
+    print(f"\n[images-api] Converting and uploading {len(image_files)} images ({max_workers} threads)...")
+    success = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_convert_and_upload, (i, p)): p for i, p in enumerate(image_files)}
+        for future in as_completed(futures):
+            if future.result():
+                success += 1
+
+    print(f"[images-api] ✅ Uploaded {success}/{len(image_files)} page images")
+
+    # Upload dimensions.json
+    if success > 0:
+        default_dim = {"w": 1240, "h": 1754}
+        dims = [d if d is not None else default_dim for d in dimensions]
+        dims_url = f"{base_url}/api/pages/{parent_id}/dimensions.json"
+        try:
+            resp = requests.put(
+                dims_url,
+                data=_json.dumps(dims).encode("utf-8"),
+                headers={**headers, "Content-Type": "application/json"},
+                verify=False,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                print(f"[images-api] ✅ Uploaded dimensions.json ({len(dims)} pages)")
+            else:
+                print(f"[images-api] ✗ dimensions.json: HTTP {resp.status_code}")
+        except Exception as exc:
+            print(f"[images-api] ✗ dimensions.json: {exc}")
+
+    return success
+
+
 def trigger_fulltext_indexing(base_url: str, token: str, record_id: str):
     """
     Trigger fulltext indexing via the server-side API endpoint.
@@ -788,10 +881,18 @@ def cmd_ingest_book(args):
             content_type=thumbnail_content_type,
         )
 
-    # Mirror to local disk BEFORE publish so the PDF is on EFS
-    # even if publish times out for large books (800+ files)
-    # Use parent_id so files persist across versions
-    mirror_pdf_to_local_disk(pdf, parent_id, pdf.name, book_dir=book_dir)
+    # Upload pre-rendered images via API (--use-images flag)
+    use_images = getattr(args, "use_images", False)
+    if use_images:
+        images_dir = book_dir / "images"
+        if images_dir.exists():
+            upload_images_via_api(args.base_url, token, parent_id, images_dir)
+        else:
+            print(f"[images-api] ⚠️  --use-images set but no images/ folder found in {book_dir}")
+
+    # Mirror PDF to local disk (skipped when --use-images since pages are already uploaded)
+    if not use_images:
+        mirror_pdf_to_local_disk(pdf, parent_id, pdf.name, book_dir=book_dir)
 
     # Mirror to Cantaloupe bucket
     mirrored = mirror_pdf_to_cantaloupe(pdf, args.book_id)
@@ -870,6 +971,7 @@ def main():
     p.add_argument("--book-id")
     p.add_argument("--include-hocr", action="store_true", help="Include HOCR files (upload to record unless --mirror-hocr-only)")
     p.add_argument("--mirror-hocr-only", action="store_true", help="Mirror HOCR to filesystem without uploading to record (requires --include-hocr)")
+    p.add_argument("--use-images", action="store_true", help="Upload pre-rendered images from images/ folder via API instead of converting PDF server-side")
     p.add_argument("--id")
     p.add_argument("--filename")
     p.add_argument("--resource-type", default="publication-book", help="Resource type ID (e.g., publication-book)")

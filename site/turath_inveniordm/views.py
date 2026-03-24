@@ -223,12 +223,19 @@ def create_api_blueprint(app):
 
             pages_mirrored = False
             try:
-                pages_dir = mirror_pdf_pages_to_cantaloupe_filesystem(
-                    record, parent_id,
-                )
-                pages_mirrored = pages_dir is not None
-                if pages_mirrored:
-                    logger.info("Converted PDF pages to %s", pages_dir)
+                from pathlib import Path
+                from .cantaloupe_mirror import get_cantaloupe_files_base
+                _pages_dir = get_cantaloupe_files_base() / parent_id / "pages"
+                if _pages_dir.exists() and any(_pages_dir.glob("*.jpg")):
+                    logger.info("Pages already exist for %s; skipping PDF conversion", pid_value)
+                    pages_mirrored = True
+                else:
+                    pages_dir = mirror_pdf_pages_to_cantaloupe_filesystem(
+                        record, parent_id,
+                    )
+                    pages_mirrored = pages_dir is not None
+                    if pages_mirrored:
+                        logger.info("Converted PDF pages to %s", pages_dir)
             except Exception as mirror_exc:
                 logger.error(
                     "PDF page conversion failed for %s: %s",
@@ -330,6 +337,63 @@ def create_api_blueprint(app):
 
         except Exception as exc:
             logger.exception("Failed to write HOCR file %s/%s", parent_id, filename)
+            return jsonify({"status": "error", "message": str(exc)}), 500
+
+    @api_bp.route("/pages/<parent_id>/<filename>", methods=["PUT"])
+    def upload_page_file(parent_id, filename):
+        """
+        Write a single page image (*.jpg) or dimensions.json directly to the
+        Cantaloupe filesystem mount.
+
+        Accepts raw file bytes (application/octet-stream).
+        Called by records_crud.py when --use-images flag is set.
+
+        Works in both dev (writes to ./cantaloupe-files/) and production
+        (writes to EFS mounted at /cantaloupe-files/).
+        """
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"status": "error", "message": "Authentication required"}), 401
+
+        try:
+            from invenio_oauth2server.models import Token
+            token_string = auth_header.split(" ", 1)[1]
+            token_obj = Token.query.filter_by(access_token=token_string).first()
+            if not token_obj:
+                return jsonify({"status": "error", "message": "Invalid token"}), 401
+        except Exception as exc:
+            logger.exception("Token validation failed")
+            return jsonify({"status": "error", "message": str(exc)}), 500
+
+        if filename != "dimensions.json" and not (filename.endswith(".jpg") or filename.endswith(".jpeg")):
+            return jsonify({"status": "error", "message": "Only .jpg and dimensions.json accepted"}), 400
+
+        safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        if not all(c in safe_chars for c in parent_id):
+            return jsonify({"status": "error", "message": "Invalid parent_id"}), 400
+
+        try:
+            cantaloupe_base = (
+                os.environ.get("CANTALOUPE_FILES_BASE")
+                or os.path.join(os.getcwd(), "cantaloupe-files")
+            )
+            record_dir = os.path.join(cantaloupe_base, parent_id)
+
+            if filename == "dimensions.json":
+                target_path = os.path.join(record_dir, filename)
+                os.makedirs(record_dir, exist_ok=True)
+            else:
+                pages_dir = os.path.join(record_dir, "pages")
+                os.makedirs(pages_dir, exist_ok=True)
+                target_path = os.path.join(pages_dir, filename)
+
+            with open(target_path, "wb") as f:
+                f.write(request.get_data())
+
+            return jsonify({"status": "ok", "path": target_path}), 200
+
+        except Exception as exc:
+            logger.exception("Failed to write page file %s/%s", parent_id, filename)
             return jsonify({"status": "error", "message": str(exc)}), 500
 
     return api_bp

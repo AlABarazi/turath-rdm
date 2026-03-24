@@ -35,12 +35,18 @@ def _do_process_record_files(record_pid: str) -> None:
 
     parent_id = record.parent.pid.pid_value
 
-    # Step 1: PDF → JPEG pages
-    pages_dir = mirror_pdf_pages_to_cantaloupe_filesystem(record, record_pid)
-    if pages_dir:
-        logger.info("Converted PDF pages for %s → %s", record_pid, pages_dir)
+    # Step 1: PDF → JPEG pages (skip if already uploaded via --use-images)
+    from .cantaloupe_mirror import get_cantaloupe_files_base
+    from pathlib import Path
+    _pages_dir = get_cantaloupe_files_base() / parent_id / "pages"
+    if _pages_dir.exists() and any(_pages_dir.glob("*.jpg")):
+        logger.info("Pages already exist for %s; skipping PDF conversion", record_pid)
     else:
-        logger.info("No PDF found for %s; skipping image conversion", record_pid)
+        pages_dir = mirror_pdf_pages_to_cantaloupe_filesystem(record, record_pid)
+        if pages_dir:
+            logger.info("Converted PDF pages for %s → %s", record_pid, pages_dir)
+        else:
+            logger.info("No PDF found for %s; skipping image conversion", record_pid)
 
     # Step 2: HOCR → filesystem
     hocr_count = sync_hocr_to_filesystem(record)
