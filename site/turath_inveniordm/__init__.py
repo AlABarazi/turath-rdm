@@ -39,7 +39,13 @@ def init_app(app):
     
     # Register HOCR sync signal handlers
     try:
-        from . import signals as hocr_signals
+        from . import signals as hocr_signals  # noqa: F401
         app.logger.info("✅ HOCR sync signal handlers registered")
     except Exception as e:
         app.logger.error(f"Failed to register HOCR signals: {e}")
+
+    # Import tasks so Celery worker discovers process_record_files at startup
+    try:
+        from . import tasks as _tasks  # noqa: F401
+    except Exception as e:
+        app.logger.error(f"Failed to import Celery tasks: {e}")

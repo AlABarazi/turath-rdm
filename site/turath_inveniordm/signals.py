@@ -7,28 +7,18 @@ Automatically syncs HOCR files from records to filesystem for fast search/annota
 import os
 import shutil
 import logging
-from contextvars import ContextVar
+import threading
 
 from invenio_rdm_records.records.api import RDMRecord
-from invenio_rdm_records.proxies import current_rdm_records_service
 from invenio_records.signals import (
     after_record_insert,
     after_record_update,
     before_record_delete
 )
 
-from .cantaloupe_mirror import (
-    cleanup_cantaloupe_record_dir,
-    mirror_pdf_pages_to_cantaloupe_filesystem,
-)
-from .fulltext import extract_hocr_text
+from .cantaloupe_mirror import cleanup_cantaloupe_record_dir, sync_hocr_files_parallel
 
 logger = logging.getLogger(__name__)
-
-_fulltext_update_in_progress = ContextVar(
-    "turath_fulltext_update_in_progress",
-    default=False,
-)
 
 # Base directory for HOCR filesystem cache
 # Default to local project directory for dev (invenio-cli run), /hocr_mount/books for prod (containers)
@@ -79,26 +69,10 @@ def sync_hocr_to_filesystem(record):
         logger.error(f"Failed to create HOCR directory for {parent_id}: {e}")
         return 0
     
-    # Copy all .hocr files from record
-    hocr_count = 0
-    for file_key in record_hocr_keys:
-            try:
-                file_obj = record.files[file_key]
-                with file_obj.get_stream('rb') as source:
-                    content = source.read()
-                
-                target_path = os.path.join(hocr_dir, file_key)
-                with open(target_path, 'wb') as f:
-                    f.write(content)
-                
-                hocr_count += 1
-                logger.debug(f"Synced {file_key} for {parent_id}")
-            except Exception as e:
-                logger.error(f"Failed to sync {file_key} for {parent_id}: {e}")
-    
+    # Download all HOCR files in parallel (much faster than sequential for large books)
+    hocr_count = sync_hocr_files_parallel(record, hocr_dir)
     if hocr_count > 0:
-        logger.info(f"✅ Synced {hocr_count} HOCR files for parent {parent_id}")
-    
+        logger.info("Synced %d HOCR files for %s (parallel)", hocr_count, parent_id)
     return hocr_count
 
 
@@ -151,116 +125,53 @@ def cleanup_old_versions_for_parent(parent_id, except_pid=None):
 @after_record_update.connect
 def comprehensive_hocr_handler(sender, record=None, **kwargs):
     """
-    Comprehensive HOCR sync handler for all record lifecycle events.
-    
-    Handles:
-    - New record publish
-    - Record edit → republish
-    - New version creation
-    - Soft delete (is_deleted flag)
-    - File additions/removals
-    
-    CRITICAL: Based on lessons learned:
-    - InvenioRDM uses SOFT DELETE (is_deleted flag, not signal)
-    - Each version gets NEW PID (not same PID)
-    - Old versions remain in DB with is_latest=false
+    Dispatch background processing after a record is inserted or updated.
+
+    Handles soft deletes synchronously (cleanup must happen immediately).
+    All file processing (PDF→JPEG, HOCR sync, fulltext indexing) is
+    delegated to the `process_record_files` Celery task so the publish
+    request returns immediately.
     """
     if not isinstance(record, RDMRecord):
         return
 
-    if _fulltext_update_in_progress.get():
-        return
-    
     record_pid = record.pid.pid_value
-    
-    # =============================
-    # SCENARIO 1: Soft Delete
-    # =============================
-    # InvenioRDM doesn't physically delete records!
-    # It sets is_deleted=True flag instead
-    if record.get('is_deleted', False):
+
+    # Soft delete — clean up filesystem immediately
+    if record.get("is_deleted", False):
         parent_id = record.parent.pid.pid_value
-        logger.info(f"🪦 Record {record_pid} soft deleted - cleaning up HOCR")
+        logger.info("Record %s soft deleted — cleaning up", record_pid)
         cleanup_hocr_from_filesystem(parent_id)
         cleanup_cantaloupe_record_dir(parent_id)
         return
-    
-    # =============================
-    # SCENARIO 2: Old Version (skip)
-    # =============================
-    # Each version gets a NEW PID
-    # Old versions have is_latest=false and should be skipped
-    if not record.get('versions', {}).get('is_latest', True):
-        logger.info(f"📜 Record {record_pid} is old version - skipping sync")
+
+    # Skip old versions
+    if not record.get("versions", {}).get("is_latest", True):
         return
-    
-    # =============================
-    # SCENARIO 3: New Version (cleanup old)
-    # =============================
-    # If this is version 2+, cleanup old version's HOCR
-    version_index = record.get('versions', {}).get('index', 1)
-    if version_index > 1:
-        logger.info(f"🔄 Record {record_pid} is new version {version_index}")
-        parent_id = record.get('parent', {}).get('id')
-        if parent_id:
-            cleanup_old_versions_for_parent(parent_id, except_pid=record_pid)
-    
-    # =============================
-    # SCENARIO 4 & 5: Normal Sync
-    # =============================
-    # Publish or update - sync HOCR files
-    if record.files.enabled:
-        hocr_count = sync_hocr_to_filesystem(record)
-        if hocr_count == 0:
-            logger.info(f"ℹ️ Record {record_pid} has no HOCR files")
-        try:
-            parent_id = record.parent.pid.pid_value
-            mirror_pdf_pages_to_cantaloupe_filesystem(record, record_pid)
-        except Exception as e:
-            logger.error(
-                "❌ Failed to convert PDF pages for %s: %s",
-                record_pid,
-                e,
-            )
 
-        if hocr_count == 0:
-            return
+    if not record.files.enabled:
+        return
 
-        try:
-            parent_id = record.parent.pid.pid_value
-            logger.info(f"🔍 Extracting fulltext for {record_pid}...")
-            fulltext = extract_hocr_text(parent_id)
-            if not fulltext:
-                logger.warning(f"⚠️ No text extracted for {record_pid}")
-                return
+    # Run processing in a background thread so publish returns immediately.
+    # We use a thread (not Celery) because the worker needs access to the
+    # local cantaloupe-files/ filesystem which is only available in the
+    # web process on the host machine.
+    try:
+        from flask import current_app
+        app = current_app._get_current_object()
 
-            existing = (record.get('custom_fields') or {}).get('turath:fulltext')
-            if existing == fulltext:
-                logger.info(
-                    "ℹ️ Fulltext already up-to-date for %s; skipping commit",
-                    record_pid,
-                )
-                return
+        def _background(app, pid):
+            import time
+            time.sleep(3)  # Let the publish transaction commit before we read the record
+            with app.app_context():
+                from .tasks import _do_process_record_files
+                _do_process_record_files(pid)
 
-            record.setdefault('custom_fields', {})['turath:fulltext'] = fulltext
-
-            token = _fulltext_update_in_progress.set(True)
-            try:
-                record.commit()
-                current_rdm_records_service.indexer.index(record)
-            finally:
-                _fulltext_update_in_progress.reset(token)
-
-            logger.info(
-                "✅ Indexed fulltext (%s chars) for %s",
-                len(fulltext),
-                record_pid,
-            )
-        except Exception as e:
-            logger.error(f"❌ Failed to index fulltext for {record_pid}: {e}")
-
-    else:
-        logger.debug(f"Record {record_pid} has files disabled")
+        t = threading.Thread(target=_background, args=(app, record_pid), daemon=True)
+        t.start()
+        logger.info("Started background thread for %s", record_pid)
+    except Exception as exc:
+        logger.error("Failed to start background thread for %s: %s", record_pid, exc)
 
 
 # =============================

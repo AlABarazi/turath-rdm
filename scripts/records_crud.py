@@ -438,6 +438,62 @@ def s3_client_from_env():
     )
 
 
+def upload_hocr_via_api(
+    base_url: str,
+    token: str,
+    parent_id: str,
+    hocr_files: List[Path],
+    max_workers: int = 8,
+) -> int:
+    """
+    Upload HOCR files directly to the server's HOCR filesystem mount via the
+    PUT /api/hocr-files/<parent_id>/<filename> endpoint.
+
+    Files are uploaded in parallel (max_workers threads) and written directly
+    to the server's EFS/local filesystem — no S3/MinIO round-trip needed.
+
+    Returns the number of successfully uploaded files.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if not hocr_files:
+        return 0
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/octet-stream",
+    }
+
+    def _upload_one(hocr_path: Path) -> bool:
+        url = f"{base_url}/api/hocr-files/{parent_id}/{hocr_path.name}"
+        try:
+            resp = requests.put(
+                url,
+                data=hocr_path.read_bytes(),
+                headers=headers,
+                verify=False,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return True
+            print(f"[hocr-api] ✗ {hocr_path.name}: HTTP {resp.status_code}")
+            return False
+        except Exception as exc:
+            print(f"[hocr-api] ✗ {hocr_path.name}: {exc}")
+            return False
+
+    print(f"\n[hocr-api] Uploading {len(hocr_files)} HOCR files via API ({max_workers} threads)...")
+    success = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_upload_one, p): p for p in hocr_files}
+        for future in as_completed(futures):
+            if future.result():
+                success += 1
+
+    print(f"[hocr-api] ✅ Uploaded {success}/{len(hocr_files)} HOCR files")
+    return success
+
+
 def trigger_fulltext_indexing(base_url: str, token: str, record_id: str):
     """
     Trigger fulltext indexing via the server-side API endpoint.
@@ -703,29 +759,25 @@ def cmd_ingest_book(args):
     parent_id = draft.get("parent", {}).get("id", record_id)
     print({"record_id": record_id, "parent_id": parent_id})
 
-    # Determine whether to upload HOCR to record or just mirror to filesystem
-    mirror_hocr_only = getattr(args, 'mirror_hocr_only', False)
-    
-    # Init files (PDF + HOCRs only if uploading them)
+    # Init files — PDF only (HOCR goes directly to filesystem via API, not S3)
     keys = [pdf.name]
-    if hocr_files and not mirror_hocr_only:
-        keys.extend([p.name for p in hocr_files])
     if thumbnail_key:
         keys.append(thumbnail_key)
     init_files(args.base_url, token, record_id, keys)
 
-    # Upload + commit
+    # Upload PDF
     upload_and_commit(args.base_url, token, record_id, pdf.name, pdf)
-    
+
+    # Upload HOCR directly to server filesystem (bypasses S3 entirely)
+    mirror_hocr_only = getattr(args, 'mirror_hocr_only', False)
     if hocr_files:
         if mirror_hocr_only:
-            # Mirror HOCR directly to filesystem without uploading to record
+            # Local-only shortcut: copy directly on the same machine (dev only)
             print(f"\n⚡ Mirror-only mode: Copying {len(hocr_files)} HOCR files to filesystem...")
             mirror_hocr_to_filesystem(hocr_files, parent_id)
         else:
-            # Upload HOCR to record (traditional mode)
-            for hocr_path in hocr_files:
-                upload_and_commit(args.base_url, token, record_id, hocr_path.name, hocr_path)
+            # Default: upload via API so server writes to EFS/filesystem (works in production)
+            upload_hocr_via_api(args.base_url, token, parent_id, hocr_files)
     if thumbnail_key and thumbnail_path and thumbnail_content_type:
         upload_and_commit(
             args.base_url,

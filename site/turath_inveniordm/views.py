@@ -277,4 +277,59 @@ def create_api_blueprint(app):
                 "message": str(exc),
             }), 500
 
+    @api_bp.route("/hocr-files/<parent_id>/<filename>", methods=["PUT"])
+    def upload_hocr_file(parent_id, filename):
+        """
+        Write a single HOCR file directly to the HOCR filesystem mount.
+
+        Accepts raw file bytes (application/octet-stream).
+        Called by records_crud.py in parallel instead of uploading HOCR
+        as InvenioRDM record files — avoids the S3 upload/download round-trip.
+
+        Works in both dev (writes to ./hocr_mount/books/) and production
+        (writes to EFS mounted at /hocr_mount/books/).
+        """
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"status": "error", "message": "Authentication required"}), 401
+
+        try:
+            from invenio_oauth2server.models import Token
+            token_string = auth_header.split(" ", 1)[1]
+            token_obj = Token.query.filter_by(access_token=token_string).first()
+            if not token_obj:
+                return jsonify({"status": "error", "message": "Invalid token"}), 401
+        except Exception as exc:
+            logger.exception("Token validation failed")
+            return jsonify({"status": "error", "message": str(exc)}), 500
+
+        if not filename.endswith(".hocr"):
+            return jsonify({"status": "error", "message": "Only .hocr files accepted"}), 400
+
+        # Sanitize inputs — only allow safe characters in path components
+        safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        if not all(c in safe_chars for c in parent_id):
+            return jsonify({"status": "error", "message": "Invalid parent_id"}), 400
+        if not all(c in safe_chars for c in filename):
+            return jsonify({"status": "error", "message": "Invalid filename"}), 400
+
+        try:
+            import os
+            hocr_mount_base = (
+                os.environ.get("HOCR_MOUNT_BASE")
+                or os.path.join(os.getcwd(), "hocr_mount/books")
+            )
+            hocr_dir = os.path.join(hocr_mount_base, parent_id, "hocr")
+            os.makedirs(hocr_dir, exist_ok=True)
+
+            target_path = os.path.join(hocr_dir, filename)
+            with open(target_path, "wb") as f:
+                f.write(request.get_data())
+
+            return jsonify({"status": "ok", "path": target_path}), 200
+
+        except Exception as exc:
+            logger.exception("Failed to write HOCR file %s/%s", parent_id, filename)
+            return jsonify({"status": "error", "message": str(exc)}), 500
+
     return api_bp
