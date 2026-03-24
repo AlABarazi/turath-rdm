@@ -764,9 +764,8 @@ def cmd_ingest_book(args):
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
     
-    # Trigger fulltext indexing via server-side API endpoint
-    if hocr_files:
-        trigger_fulltext_indexing(args.base_url, token, record_id)
+    # Trigger server-side processing: PDF→images conversion + HOCR sync + fulltext indexing
+    trigger_fulltext_indexing(args.base_url, token, record_id)
     
     # Return both record_id and parent_id for use by calling scripts
     return {"record_id": record_id, "parent_id": parent_id}

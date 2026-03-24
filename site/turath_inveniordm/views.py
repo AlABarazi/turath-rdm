@@ -241,7 +241,7 @@ def create_api_blueprint(app):
                     "message": "No HOCR files found",
                     "hocr_count": 0,
                     "fulltext_length": 0,
-                    "pdf_mirrored": pdf_mirrored,
+                    "pages_mirrored": pages_mirrored,
                 }), 200
 
             fulltext = extract_hocr_text(parent_id)
@@ -267,7 +267,7 @@ def create_api_blueprint(app):
                 "message": "Fulltext indexed",
                 "hocr_count": hocr_count,
                 "fulltext_length": len(fulltext),
-                "pdf_mirrored": pdf_mirrored,
+                "pages_mirrored": pages_mirrored,
             }), 200
 
         except Exception as exc:
