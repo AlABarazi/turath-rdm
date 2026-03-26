@@ -181,8 +181,11 @@ def patch_iiif_manifest_schema():
                 pass
 
         if not pdf_key:
-            # No PDF found; nothing to do
-            return manifest
+            # No PDF — check if pre-rendered pages exist (images-only book)
+            _pages_check = get_cantaloupe_files_base() / (parent_id or record_pid) / "pages"
+            if not (_pages_check.is_dir() and any(_pages_check.glob("*.jpg"))):
+                return manifest
+            # Pages exist without a PDF — continue to build canvases from images
 
         cantaloupe_id = parent_id if parent_id else record_pid
         record_dir = get_cantaloupe_files_base() / (parent_id or record_pid)
@@ -327,12 +330,13 @@ def patch_iiif_manifest_schema():
             }
         ]
 
-        # Top-level related PDF link (actual filename)
-        manifest["related"] = {
-            "@id": f"{app_base}/records/{record_pid}/files/{pdf_key}",
-            "format": "application/pdf",
-            "label": "Download full PDF",
-        }
+        # Top-level related PDF link (only when PDF exists in record)
+        if pdf_key:
+            manifest["related"] = {
+                "@id": f"{app_base}/records/{record_pid}/files/{pdf_key}",
+                "format": "application/pdf",
+                "label": "Download full PDF",
+            }
 
         return manifest
     

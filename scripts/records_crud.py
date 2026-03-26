@@ -798,13 +798,17 @@ def cmd_ingest_book(args):
     if not book_dir.exists():
         raise FileNotFoundError(f"Book directory not found: {book_dir}")
 
-    # PDF
+    # PDF (optional when --use-images is set)
+    use_images = getattr(args, "use_images", False)
     pdf = book_dir / f"{args.book_id}.pdf"
     if not pdf.exists():
         cands = sorted(book_dir.glob("*.pdf"))
         if not cands:
-            raise FileNotFoundError(f"No PDF found in {book_dir}")
-        pdf = cands[0]
+            if not use_images:
+                raise FileNotFoundError(f"No PDF found in {book_dir}")
+            pdf = None  # images-only book — no PDF needed
+        else:
+            pdf = cands[0]
 
     # HOCR (optional): gather ALL *.hocr files from root and optional 'hocr/' subfolder
     hocr_files = []
@@ -852,14 +856,17 @@ def cmd_ingest_book(args):
     parent_id = draft.get("parent", {}).get("id", record_id)
     print({"record_id": record_id, "parent_id": parent_id})
 
-    # Init files — PDF only (HOCR goes directly to filesystem via API, not S3)
-    keys = [pdf.name]
+    # Init files — PDF (if present) + thumbnail
+    keys = []
+    if pdf:
+        keys.append(pdf.name)
     if thumbnail_key:
         keys.append(thumbnail_key)
     init_files(args.base_url, token, record_id, keys)
 
-    # Upload PDF
-    upload_and_commit(args.base_url, token, record_id, pdf.name, pdf)
+    # Upload PDF (if present)
+    if pdf:
+        upload_and_commit(args.base_url, token, record_id, pdf.name, pdf)
 
     # Upload HOCR directly to server filesystem (bypasses S3 entirely)
     mirror_hocr_only = getattr(args, 'mirror_hocr_only', False)
@@ -882,7 +889,6 @@ def cmd_ingest_book(args):
         )
 
     # Upload pre-rendered images via API (--use-images flag)
-    use_images = getattr(args, "use_images", False)
     if use_images:
         images_dir = book_dir / "images"
         if images_dir.exists():
@@ -890,17 +896,18 @@ def cmd_ingest_book(args):
         else:
             print(f"[images-api] ⚠️  --use-images set but no images/ folder found in {book_dir}")
 
-    # Mirror PDF to local disk (skipped when --use-images since pages are already uploaded)
-    if not use_images:
+    # Mirror PDF to local disk (only when PDF exists and not using pre-rendered images)
+    if pdf and not use_images:
         mirror_pdf_to_local_disk(pdf, parent_id, pdf.name, book_dir=book_dir)
 
-    # Mirror to Cantaloupe bucket
-    mirrored = mirror_pdf_to_cantaloupe(pdf, args.book_id)
-    if mirrored:
-        bucket, key = mirrored
-        iiif_base = os.getenv("IIIF_IMAGE_BASE", "http://127.0.0.1:8182")
-        iiif_full = f"{iiif_base}/iiif/2/{key}/full/full/0/default.jpg?page=1"
-        print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
+    # Mirror to Cantaloupe bucket (only when PDF exists)
+    if pdf:
+        mirrored = mirror_pdf_to_cantaloupe(pdf, args.book_id)
+        if mirrored:
+            bucket, key = mirrored
+            iiif_base = os.getenv("IIIF_IMAGE_BASE", "http://127.0.0.1:8182")
+            iiif_full = f"{iiif_base}/iiif/2/{key}/full/full/0/default.jpg?page=1"
+            print({"mirrored": f"s3://{bucket}/{key}", "sample_iiif_page1": iiif_full})
 
     # Publish
     published = publish(args.base_url, token, record_id)
@@ -910,9 +917,10 @@ def cmd_ingest_book(args):
     entries = list_files(args.base_url, token, record_id)
     print({"files": [e.get("key") for e in entries]})
 
-    cl = head_content_length(args.base_url, token, record_id, pdf.name)
-    path, size, sha = download_and_sha256(args.base_url, token, record_id, pdf.name)
-    print({"pdf_content_length": cl, "download_path": path, "size": size, "sha256": sha})
+    if pdf:
+        cl = head_content_length(args.base_url, token, record_id, pdf.name)
+        path, size, sha = download_and_sha256(args.base_url, token, record_id, pdf.name)
+        print({"pdf_content_length": cl, "download_path": path, "size": size, "sha256": sha})
 
     ui_url = f"{args.base_url.replace('/api', '')}/records/{record_id}"
     print({"record_ui": ui_url})
